@@ -88,75 +88,93 @@ void swapInt(int &a, int &b) {
     b = temp;
 }
 
-void MatrixPanel::drawLineWu(int x0, int y0, int x1, int y1, uint8_t red, uint8_t grn, uint8_t blu) {
-    bool steep = abs(y1 - y0) > abs(x1 - x0);
-    
-    if (steep) {
-        swapInt(x0, y0);
-        swapInt(x1, y1);
+void MatrixPanel::drawPixelHSV(int16_t x, int16_t y, float H, float S,float V){
+    if(H>360 || H<0 || S>100 || S<0 || V>100 || V<0){
+        //cout<<"The givem HSV values are not in valid range"<<endl;
+        return;
     }
-    if (x0 > x1) {
-        swapInt(x0, x1);
-        swapInt(y0, y1);
+    float s = S/100;
+    float v = V/100;
+    float C = s*v;
+    float X = C*(1-abs(fmod(H/60.0, 2)-1));
+    float m = v-C;
+    float r,g,b;
+    if(H >= 0 && H < 60){
+        r = C,g = X,b = 0;
     }
-    
-    int dx = x1 - x0;
-    int dy = y1 - y0;
-     
-    float gradient = 0;
-    if (dx == 0.0) {
-        gradient = 1.0;
-    } else {
-        gradient = dy / dx;
+    else if(H >= 60 && H < 120){
+        r = X,g = C,b = 0;
     }
+    else if(H >= 120 && H < 180){
+        r = 0,g = C,b = X;
+    }
+    else if(H >= 180 && H < 240){
+        r = 0,g = X,b = C;
+    }
+    else if(H >= 240 && H < 300){
+        r = X,g = 0,b = C;
+    }
+    else{
+        r = C,g = 0,b = X;
+    }
+    uint8_t R = (r+m)*255;
+    uint8_t G = (g+m)*255;
+    uint8_t B = (b+m)*255;
 
-    // handle first endpoint
-    float xend1 = floor(x0 + 0.5);
-    float yend1 = y0 + gradient * (xend1 - x0);
-    float xgap1 = 1 - ((x0 + 0.5) - floor(x0 + 0.5));
-    float xpxl1 = xend1; // this will be used in the main loop
-    float ypxl1 = floor(yend1);
-    if (steep) {
-        drawPixel(ypxl1,   xpxl1, (1-(yend1 - floor(yend1))) * xgap1, 0, 0);
-        drawPixel(ypxl1+1, xpxl1,  (yend1 - floor(yend1)) * xgap1, 0, 0);
-    } else {
-        drawPixel(xpxl1, ypxl1  , (1-(yend1 - floor(yend1))) * xgap1, 0, 0);
-        drawPixel(xpxl1, ypxl1+1,  (yend1 - floor(yend1)) * xgap1, 0, 0);
-    }
-    float intery = yend1 + gradient; // first y-intersection for the main loop
-    
-    // handle second endpoint
-    float xend2 = floor(x1 + 0.5);
-    float yend2 = y1 + gradient * (xend2 - x1);
-    float xgap2 = ((x1 + 0.5) - floor(x1 + 0.5));
-    float xpxl2 = xend2; //this will be used in the main loop
-    float ypxl2 = floor(yend2);
-    if (steep) {
-        drawPixel(ypxl2  , xpxl2, (1-(yend2 - floor(yend2))) * xgap2, 0, 0);
-        drawPixel(ypxl2+1, xpxl2,  (yend2 - floor(yend2)) * xgap2, 0, 0);
-    } else {
-        drawPixel(xpxl2, ypxl2,  (1-(yend2 - floor(yend2))) * xgap2, 0, 0);
-        drawPixel(xpxl2, ypxl2+1, (yend2 - floor(yend2)) * xgap2, 0, 0);
-    }
-    
-    // main loop
-    if (steep) {
-        for (int x=(xpxl1 + 1); x<(xpxl2 - 1); x++){
-            drawPixel(floor(intery)  , x, (1-(intery - floor(intery))), 0, 0);
-            drawPixel(floor(intery)+1, x,  (intery - floor(intery)), 0, 0);
-            intery = intery + gradient;
-        }
-    } else {
-        for (int x=(xpxl1 + 1); x<(xpxl2 - 1); x++) {
-            drawPixel(x, floor(intery),  (1-(intery - floor(intery))), 0, 0);
-            drawPixel(x, floor(intery)+1, (intery - floor(intery)), 0, 0);
-            intery = intery + gradient;
-        }
-    }
+    drawPixel(x, y, R, G, B);
+}
+
+void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8_t b){
+	int w = 32;
+	int IMG_TOP = min(min(min(py[0],py[1]),py[2]),py[3]);
+	int IMG_BOT = max(max(max(py[0],py[1]),py[2]),py[3])+1;
+	int IMG_LEF = min(min(min(px[0],px[1]),px[2]),px[3]);
+	int IMG_RIG = max(max(max(px[0],px[1]),px[2]),px[3])+1;
+	int MAX_POLY_CORNERS = 4;
+	int polyCorners = 4;
+	int nodes;
+	int nodeX[MAX_POLY_CORNERS] = {};
+	int pixelY;
+	int i;
+	int j;
+	int swap;
+	
+	for (pixelY=IMG_TOP; pixelY<IMG_BOT; pixelY++){
+		nodes = 0; j = polyCorners-1;
+		for (i=0; i<polyCorners; i++){
+			if ((py[i]<pixelY && py[j]>=pixelY) || (py[j]<pixelY && py[i]>=pixelY)){
+				nodeX[nodes++] = (px[i]+(pixelY-py[i])/(py[j]-py[i])*(px[j]-px[i]));
+			}
+			j=i;
+		}
+		
+		i=0;
+		while(i<nodes-1){
+			if (nodeX[i]>nodeX[i+1]){
+				swap=nodeX[i]; nodeX[i]=nodeX[i+1]; nodeX[i+1]=swap; if (i) i--; }
+			else{
+				i++;
+			}
+		}
+		
+		
+		for (i=0; i<nodes; i+=2){
+			int nodeXi = nodeX[i];
+			int nodeXii = nodeX[i+1];
+			if (nodeXi>=IMG_RIG) break;
+			if (nodeXii>IMG_LEF) {
+				if (nodeXi<IMG_LEF) nodeXi=IMG_LEF;
+				if (nodeXii>IMG_RIG) nodeXii = IMG_RIG;
+				for (int pixelX=nodeXi;pixelX<nodeXii;pixelX++){
+					drawPixel(pixelX, pixelY, r, g, b);
+				}
+			}
+		}
+	}
 }
 
 //creates a filled polygon with n = the amount of corners
-void MatrixPanel::fillPoly(float *px, float *py, uint n, uint8_t r, uint8_t g, uint8_t b) 
+/*void MatrixPanel::fillPoly(float *px, float *py, uint n, uint8_t r, uint8_t g, uint8_t b) 
 {
     int IMG_TOP = py[0];
     int IMG_BOT = py[0];
@@ -226,4 +244,4 @@ void MatrixPanel::fillPoly(float *px, float *py, uint n, uint8_t r, uint8_t g, u
             }
 	    }
     }
-}
+}*/

@@ -23,8 +23,11 @@ public:
     void drawPixel(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint8_t blu);
     void drawLine(int x0, int y0, int x1, int y1, uint8_t red, uint8_t grn, uint8_t blu);
     void drawLineWu(int x0, int y0, int x1, int y1, uint8_t red, uint8_t grn, uint8_t blu);
-    void fillPoly(float *px, float *py, uint n, uint8_t r, uint8_t g, uint8_t b);
+    //void fillPoly(float *px, float *py, uint n, uint8_t r, uint8_t g, uint8_t b);
+    void fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8_t b);
+    void drawPixelHSV(int16_t x, int16_t y, float H, float S, float V);
     
+    // adafruit overrides
     void drawPixel(int16_t x, int16_t y, uint16_t color) override;
     void fillScreen(uint16_t color) override;
 };

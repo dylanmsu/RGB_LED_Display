@@ -3,11 +3,16 @@
 #include <driver/sdmmc_types.h>
 #include <driver/sdmmc_host.h>
 #include <sdmmc_cmd.h>
+#include <vector>
 #include <esp_vfs_fat.h>
-#include "nvs_flash.h"
-#include "esp_vfs.h"
+#include <nvs_flash.h>
+#include <esp_vfs.h>
+#include <WiFi.h>
+#include <time.h>
+
 #include "pinmap.h"
 #include "MatrixPanel.h"
+#include "Graphics3D.h"
 
 extern "C" {
     #include "lua.h"
@@ -15,29 +20,102 @@ extern "C" {
     #include "lauxlib.h"
 }
 
-#define BOARD_IO_SPI3_CS (gpio_num_t)34
-
-#define BOARD_SDCARD_SDIO_CMD (gpio_num_t)35
-#define BOARD_SDCARD_SDIO_CLK (gpio_num_t)36
-#define BOARD_SDCARD_SDIO_DATA0 (gpio_num_t)37
-
-#define BOARD_SDCARD_SDIO_CLK_PIN BOARD_SDCARD_SDIO_CLK
-#define BOARD_SDCARD_SDIO_CMD_PIN BOARD_SDCARD_SDIO_CMD
-#define BOARD_SDCARD_SDIO_DO_PIN BOARD_SDCARD_SDIO_DATA0
-
-#define PIN_NUM_MISO  CONFIG_EXAMPLE_PIN_MISO
-#define PIN_NUM_MOSI  CONFIG_EXAMPLE_PIN_MOSI
-#define PIN_NUM_CLK   CONFIG_EXAMPLE_PIN_CLK
-#define PIN_NUM_CS    CONFIG_EXAMPLE_PIN_CS
+#define PIN_NUM_MISO  (gpio_num_t)12
+#define PIN_NUM_MOSI  (gpio_num_t)13
+#define PIN_NUM_CLK   (gpio_num_t)14
+#define PIN_NUM_CS    (gpio_num_t)20
 
 static const char *TAG = "example";
 
 lua_State *lua_state;
 MatrixPanel matrixPanel;
+Graphics3D graphics3D(&matrixPanel);
 
 // Mount path for the partition
 static sdmmc_card_t *mount_card = NULL;
 #define MOUNT_POINT 	"/sdcard"
+
+// NTP server to request epoch time
+const char* ntpServer = "pool.ntp.org";
+
+// Variable to save current epoch time
+unsigned long epochTime;
+
+// Function that gets current epoch time
+unsigned long getTime() {
+    time_t now;
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        Serial.println("Failed to obtain time");
+        return(0);
+    }
+    time(&now);
+    return now;
+}
+
+float clamp_value(float num, float mini, float maxi){
+	return min(max(maxi,num),mini);
+}
+
+// Initialize WiFi
+void initWiFi(const char* ssid, const char* password) {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting to WiFi ..");
+    while (WiFi.status() != WL_CONNECTED) {
+        Serial.print('.');
+        delay(1000);
+    }
+    Serial.println(WiFi.localIP());
+}
+
+void init_fat() {
+    esp_err_t ret;
+
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+        .format_if_mount_failed = false,
+        .max_files = 5,
+        .allocation_unit_size = 16 * 1024
+    };
+    const char mount_point[] = MOUNT_POINT;
+    ESP_LOGI(TAG, "Initializing SD card");
+
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    spi_bus_config_t bus_cfg = {
+        .mosi_io_num = PIN_NUM_MOSI,
+        .miso_io_num = PIN_NUM_MISO,
+        .sclk_io_num = PIN_NUM_CLK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4000,
+    };
+    ret = spi_bus_initialize((spi_host_device_t)host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize bus.");
+        return;
+    }
+
+    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot_config.gpio_cs = PIN_NUM_CS;
+    slot_config.host_id = (spi_host_device_t)host.slot;
+
+    ESP_LOGI(TAG, "Mounting filesystem");
+    ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &mount_card);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount filesystem. "
+                     "If you want the card to be formatted, set the CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize the card (%s). "
+                     "Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
+        }
+        return;
+    }
+    ESP_LOGI(TAG, "Filesystem mounted");
+
+    sdmmc_card_print_info(stdout, mount_card);
+}
 
 static int lua_drawPixel(lua_State *lua_state) {
     int x = luaL_checkinteger(lua_state, 1);
@@ -46,6 +124,16 @@ static int lua_drawPixel(lua_State *lua_state) {
     int grn = luaL_checkinteger(lua_state, 4);
     int blu = luaL_checkinteger(lua_state, 5);
     matrixPanel.drawPixel(x, y, red, grn, blu);
+    return 0;
+}
+
+static int lua_drawPixelHSV(lua_State *lua_state) {
+    int x = luaL_checkinteger(lua_state, 1);
+    int y = luaL_checkinteger(lua_state, 2);
+    int hue = luaL_checkinteger(lua_state, 3);
+    int sat = luaL_checkinteger(lua_state, 4);
+    int val = luaL_checkinteger(lua_state, 5);
+    matrixPanel.drawPixelHSV(x, y, hue, sat, val);
     return 0;
 }
 
@@ -79,27 +167,7 @@ static int lua_fillQuat(lua_State *lua_state) {
     int grn = luaL_checkinteger(lua_state, 10);
     int blu = luaL_checkinteger(lua_state, 11);
     
-    matrixPanel.fillPoly((float *)px, (float *)py, 4, red, grn, blu);
-    return 0;
-}
-
-static int lua_fillTriangle(lua_State *lua_state) {
-    double px[4] = {
-        luaL_checknumber(lua_state, 1),
-        luaL_checknumber(lua_state, 3),
-        luaL_checknumber(lua_state, 5)
-    };
-    double py[4] = {
-        luaL_checknumber(lua_state, 2),
-        luaL_checknumber(lua_state, 4),
-        luaL_checknumber(lua_state, 6)
-    };
-
-    int red = luaL_checkinteger(lua_state, 7);
-    int grn = luaL_checkinteger(lua_state, 8);
-    int blu = luaL_checkinteger(lua_state, 9);
-    
-    matrixPanel.fillPoly((float *)px, (float *)py, 3, red, grn, blu);
+    matrixPanel.fillQuat((float *)px, (float *)py, red, grn, blu);
     return 0;
 }
 
@@ -109,137 +177,141 @@ static int lua_delay(lua_State *lua_state) {
     return 0;
 }
 
+static int lua_clearScreen(lua_State *lua_state) {
+    matrixPanel.fillScreen(0x0000);
+    return 0;
+}
+
+/*static int lua_getEpoch(lua_State *lua_state) {
+    return getTime();
+}*/
+
+static int lua_syncTime(lua_State *lua_state) {
+    const char* ssid = luaL_checkstring(lua_state, 1);
+    const char* password = luaL_checkstring(lua_state, 2);
+
+    initWiFi(ssid, password);
+    configTime(0, 0, ntpServer);
+
+    //TODO: implement rtc and set correct time
+
+    return getTime();
+}
+
+//push3dVertex(x, y, z)
+static int lua_push3dVertex(lua_State *lua_state) {
+    graphics3D.pushVertex(
+        (float)luaL_checknumber(lua_state, 1),
+        (float)luaL_checknumber(lua_state, 2),
+        (float)luaL_checknumber(lua_state, 3)
+    );
+    return 0;
+}
+
+//push3dQuat(v1, v2, v3, v4, r, g, b)
+static int lua_push3dQuat(lua_State *lua_state) {
+    int p1 = luaL_checkinteger(lua_state, 1);
+    int p2 = luaL_checkinteger(lua_state, 2);
+    int p3 = luaL_checkinteger(lua_state, 3);
+    int p4 = luaL_checkinteger(lua_state, 4);
+
+    uint8_t r = luaL_checknumber(lua_state, 5);
+    uint8_t g = luaL_checknumber(lua_state, 6);
+    uint8_t b = luaL_checknumber(lua_state, 7);
+    graphics3D.pushQuat(p1, p2, p3, p4, r, g, b);
+    return 0;
+}
+
+static int lua_set3dRotation(lua_State *lua_state) {
+    float x = luaL_checknumber(lua_state, 1);
+    float y = luaL_checknumber(lua_state, 2);
+    float z = luaL_checknumber(lua_state, 3);
+    graphics3D.setRotation(x, y, z);
+    return 0;
+}
+
+static int lua_draw3dsolid(lua_State *lua_state) {
+    graphics3D.drawMesh();
+    return 0;
+}
+
+static int lua_printText(lua_State *lua_state) {
+    int textsize = luaL_checkinteger(lua_state, 1);
+    int cursorx = luaL_checkinteger(lua_state, 2);
+    int cursory = luaL_checkinteger(lua_state, 3);
+    const char * text = luaL_checkstring(lua_state, 4);
+    uint16_t color = luaL_checkinteger(lua_state, 5);
+
+    matrixPanel.setTextSize(textsize);
+    matrixPanel.setCursor(cursorx, cursory);
+    matrixPanel.setTextColor(color);
+    matrixPanel.print(text);
+    return 0;
+}
+
+void scrollString(String str) {
+    int yoff = 1;
+    matrixPanel.fillScreen(0x0000);
+    matrixPanel.setTextWrap(false);  // we don't wrap text so it scrolls nicely
+    matrixPanel.setTextSize(1);
+    int charWidth = 9; // textsize 2 @todo auto calculate charwidth from font
+    int pxwidth = (str.length()*charWidth); // @todo get actual string pixel length, add support to gfx if needed
+    for (int32_t x=charWidth; x>=-pxwidth; x--) {
+        matrixPanel.setCursor(x,yoff);
+        // Serial.println((String)x);
+        // display.print("ABCDEFGHIJKLMNONPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_0123456789");
+        matrixPanel.print(str);
+        // delay(ANIMSPEED/2);
+        delay(60);
+        matrixPanel.fillScreen(0x0000);
+    }
+    Serial.println("done");
+}
+
 void setup() {
-    esp_err_t ret;
-
-    // Options for mounting the filesystem.
-    // If format_if_mount_failed is set to true, SD card will be partitioned and
-    // formatted in case when mounting fails.
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-#ifdef CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED
-        .format_if_mount_failed = true,
-#else
-        .format_if_mount_failed = false,
-#endif // EXAMPLE_FORMAT_IF_MOUNT_FAILED
-        .max_files = 5,
-        .allocation_unit_size = 16 * 1024
-    };
-    sdmmc_card_t *card;
-    const char mount_point[] = MOUNT_POINT;
-    ESP_LOGI(TAG, "Initializing SD card");
-
-    // Use settings defined above to initialize SD card and mount FAT filesystem.
-    // Note: esp_vfs_fat_sdmmc/sdspi_mount is all-in-one convenience functions.
-    // Please check its source code and implement error recovery when developing
-    // production applications.
-    ESP_LOGI(TAG, "Using SPI peripheral");
-
-    // By default, SD card frequency is initialized to SDMMC_FREQ_DEFAULT (20MHz)
-    // For setting a specific frequency, use host.max_freq_khz (range 400kHz - 20MHz for SDSPI)
-    // Example: for fixed frequency of 10MHz, use host.max_freq_khz = 10000;
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-
-    spi_bus_config_t bus_cfg = {
-        .mosi_io_num = 13,
-        .miso_io_num = 12,
-        .sclk_io_num = 14,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = 4000,
-    };
-    ret = spi_bus_initialize((spi_host_device_t)host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize bus.");
-        return;
-    }
-
-    // This initializes the slot without card detect (CD) and write protect (WP) signals.
-    // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
-    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs = (gpio_num_t)20;
-    slot_config.host_id = (spi_host_device_t)host.slot;
-
-    ESP_LOGI(TAG, "Mounting filesystem");
-    ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
-
-    if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
-            ESP_LOGE(TAG, "Failed to mount filesystem. "
-                     "If you want the card to be formatted, set the CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
-        } else {
-            ESP_LOGE(TAG, "Failed to initialize the card (%s). "
-                     "Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
-        }
-        return;
-    }
-    ESP_LOGI(TAG, "Filesystem mounted");
-
-    // Card has been initialized, print its properties
-    sdmmc_card_print_info(stdout, card);
+    init_fat();
     
     setCpuFrequencyMhz(240);
 
     Serial.begin(115200);
 
     lua_state = luaL_newstate();
-    luaopen_base(lua_state);
-    luaopen_table(lua_state);
-    luaopen_string(lua_state);
-    luaopen_math(lua_state);
 
+    // include math library in the lua environment
+    luaL_requiref( lua_state, "math", luaopen_math, 1 );
+    lua_pop( lua_state, 1 );
+
+    // self implemented methods
     lua_register(lua_state, "drawPixel", (const lua_CFunction) &lua_drawPixel);
+    lua_register(lua_state, "drawPixelHSV", (const lua_CFunction) &lua_drawPixelHSV);
     lua_register(lua_state, "drawLine", (const lua_CFunction) &lua_drawLine);
-    lua_register(lua_state, "fillTriangle", (const lua_CFunction) &lua_fillTriangle);
     lua_register(lua_state, "fillQuat", (const lua_CFunction) &lua_fillQuat);
+    lua_register(lua_state, "clearScreen", (const lua_CFunction) &lua_clearScreen);
+
+    // adafruit gfx
+    lua_register(lua_state, "printText", (const lua_CFunction) &lua_printText);
+
+    // miscellanious methods
+    //lua_register(lua_state, "getEpoch", (const lua_CFunction) &lua_getEpoch);
+    lua_register(lua_state, "syncTime", (const lua_CFunction) &lua_syncTime);
     lua_register(lua_state, "delay", (const lua_CFunction) &lua_delay);
 
-    matrixPanel.drawChar(10,10,'w',0xffff, 0x0000, 1);
+    // 3d functions
+    lua_register(lua_state, "push3dVertex", (const lua_CFunction) &lua_push3dVertex);
+    lua_register(lua_state, "push3dQuat", (const lua_CFunction) &lua_push3dQuat);
+    lua_register(lua_state, "set3dRotation", (const lua_CFunction) &lua_set3dRotation);
+    lua_register(lua_state, "draw3dsolid", (const lua_CFunction) &lua_draw3dsolid);
 
+    // run the lua script from the sd card
     bool error = luaL_dofile(lua_state, MOUNT_POINT"/script.lua");
     if (error) {
         Serial.println("LUA ERROR: " + String(lua_tostring(lua_state, -1)));
+        scrollString(String(lua_tostring(lua_state, -1)));
         lua_pop(lua_state, 1);
-    }
+    }//*/
 }
 
-/*void solidCube() {
-    float rad = 2*pi;	
-	
-	float r = .5;
-	float g = .8;
-	float b = .4;
-
-    double verts[8*3] = {
-        -1,-1,-1, //0           1---------5         ^ +z
-        -1,-1, 1, //1          /|        /|         |
-        -1, 1,-1, //2         3-|-------7 |         |
-        -1, 1, 1, //3         | |       | |         |
-        1,-1,-1, //4          | |       | |         o--------> +x
-        1,-1, 1, //5          | 0---------4
-        1, 1,-1, //6          |/        |/
-        1, 1, 1  //7          2---------6
-    };
-
-    int faces[6*4] = {
-        1,3,7,5,  2,0,4,6,
-        1,0,2,3,  7,6,4,5,
-        3,2,6,7,  5,4,0,1,
-    };
-	
-	//int num = 5*5;
-	//double verts[num*3] = {0};
-	//int faces[num*4] = {0};
-	//torus(verts,faces);
-		
-    drawSolid(rotate(verts,8,k,k/3,k/2),faces,6,r,g,b);
-    //draw(&Sbuffer);
-
-    delay(1000/30);
-    matrix.clearScreen();
-    k+=0.05;
-}
-
-void wireCube() {
+/*void wireCube() {
     //you can define your own shape here if you want
     //(x, y, z)
     double verts[8*3] = {
