@@ -1,6 +1,12 @@
 #include "MatrixPanel.h"
 #include <vector>
 
+extern "C" {
+    #include "lua.h"
+    #include "lualib.h"
+    #include "lauxlib.h"
+}
+
 #ifndef GRAPHICS_3D
 #define GRAPHICS_3D
 
@@ -13,10 +19,11 @@ private:
     std::vector<int> faces;
     std::vector<float> face_colors;
 
-    bool enable_specular = true;
+    bool enable_specular = false;
     bool enable_diffuse = true;
 
     double rotation[3] = {0.0, 0.0, 0.0};
+
 
 public:
     Graphics3D(MatrixPanel *matrixPanel);

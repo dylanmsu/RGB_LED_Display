@@ -186,72 +186,84 @@ void Graphics3D::drawSolid(double *verts, int *faces, float *colors, int facelen
             py[k] = cy+z[k];
         }
 
-        // the following code is to provide shaders
+        // the following code are for the shaders
         //http://www.opengl-tutorial.org/beginners-tutorials/tutorial-8-basic-shading/
 		
         // diffuse color of the 3d face
 		float diffuseColor[3] = {colors[i*3 + 0], colors[i*3 + 1], colors[i*3 + 2]};
 
         // color of the licht source
-		float lightColor[3] = {1,1,1};
+		float lightColor[3] = {1,1,1};//white
 
         // color of the ambient licht
 		float ambientColor[3] = {colors[i*3 + 0]/10, colors[i*3 + 1]/10, colors[i*3 + 2]/10};
 
-		float lightPower = 10;
-		float sun[3] = {-2,2,2}; //light source position
-        float shininess = 5;
-        float specularColor[3] = {1,1,1};
+        // intensity of the light source
+		float lightPower = 100;
 
-        // common
+        // position of the light source
+		float sun[3] = {-5,5,5};
+
+        // shininess of the specular highlights (if enabled)
+        float shininess = 10;
+
+        // color of the specular highlights (if enabled)
+        float specularColor[3] = {1,1,1};//white
+
+        // calculate the face normal and the normal pointing to the camera 
+        float camNormal[3] = {cameraPos[0], cameraPos[1], cameraPos[2]};
         float faceNormal[3] = {0};
-        float sunNormal[3] = {sun[0], sun[1], sun[2]};
-        float dist_sq = 0;
-        if (enable_diffuse || enable_specular) {
-            float centerFace[3] = {0};
+        normalize(camNormal);
+        getNormal(verts, faces, facelen, i, faceNormal);
 
-            getNormal(verts, faces, facelen, i, faceNormal);
-            normalize(sunNormal);
-            faceCenter(verts, faces, i, centerFace);
-            dist_sq = pyth(sun, centerFace);
-        }
+        //some crude optimization: if the face faces away from the camera, don't draw it.
+        if (dot(camNormal, faceNormal) > 0.0) {
 
-        // diffuse
-        float cosTheta = 0;
-        if (enable_specular) {
-            cosTheta = clamp(dot(sunNormal,faceNormal),1,0);
-        }
+            // common to diffuse and specular:
+            // calculate the normal pointing to the light source and calculate the distance to the face
+            float sunNormal[3] = {sun[0], sun[1], sun[2]};
+            float dist_sq = 1;
+            if (enable_diffuse || enable_specular) {
+                float centerFace[3] = {0};
+                normalize(sunNormal);
+                faceCenter(verts, faces, i, centerFace);
+                dist_sq = pyth(sun, centerFace);
+            }
 
-        // specular
-        
-        float cosAlpha = 0;
-        if (enable_specular) {
-            float reflection[3] = {0};
-            float lightRay[3] = {-sunNormal[0], -sunNormal[1], -sunNormal[2]};
-            float camNormal[3] = {cameraPos[0], cameraPos[1], cameraPos[2]};
-
-            reflect(lightRay, faceNormal, reflection);
-            normalize(camNormal);
-            cosAlpha = clamp(dot(camNormal,reflection),1,0);
-        }
-
-        float color[3] = {0};
-        for (int c=0; c<3; c++) {
-            float ambient_component = ambientColor[c];
-            float diffuse_component = 0;
-            float specular_component = 0;
-
+            // diffuse
+            float cosTheta = 0;
             if (enable_diffuse) {
-                diffuse_component = diffuseColor[c]*lightColor[c]*lightPower*cosTheta/(dist_sq);
+                //cosTheta = sin(clamp(dot(sunNormal,faceNormal),1,0));
+                cosTheta = clamp(dot(sunNormal,faceNormal),1,0);
             }
-            if (enable_specular) {
-                specular_component = specularColor[c]*lightColor[c]*lightPower*pow(cosAlpha,shininess)/(dist_sq);
-            }
-            
-            color[c] = clamp(ambient_component + diffuse_component + specular_component, 1, 0);
-        }
 
-        matrixPanel->fillQuat(px, py, color[0]*255, color[1]*255, color[2]*255);
+            // specular
+            float cosAlpha = 0;
+            if (enable_specular) {
+                float reflection[3] = {0};
+                float lightRay[3] = {sunNormal[0], sunNormal[1], sunNormal[2]};
+                reflect(lightRay, faceNormal, reflection);
+                cosAlpha = clamp(dot(camNormal,reflection),1,0);
+            }
+
+            float color[3] = {0};
+            for (int c=0; c<3; c++) {
+                float ambient_component = ambientColor[c];
+                float diffuse_component = 0;
+                float specular_component = 0;
+
+                if (enable_diffuse) {
+                    diffuse_component = diffuseColor[c]*lightColor[c]*lightPower*cosTheta/(dist_sq);
+                }
+                if (enable_specular) {
+                    specular_component = specularColor[c]*lightColor[c]*lightPower*pow(cosAlpha,shininess)/(dist_sq);
+                }
+                
+                color[c] = clamp(ambient_component + diffuse_component + specular_component, 1, 0);
+            }
+
+            matrixPanel->fillQuat(px, py, color[0]*255, color[1]*255, color[2]*255);
+        }
     }
 }
 

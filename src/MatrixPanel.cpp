@@ -15,19 +15,27 @@ MatrixPanel::MatrixPanel(/* args */) : Adafruit_GFX(32, 32)
 
     dma_display = new MatrixPanel_I2S_DMA(mxconfig);
     dma_display->begin();
-    dma_display->setBrightness8(255);
+    dma_display->setBrightness8(4);
     fillScreen(0x0000);
 
     OneEightMatrixDisplay = new VirtualMatrixPanel((*dma_display), 1, 1, 32, 32, true, false);
-    OneEightMatrixDisplay->setPhysicalPanelScanRate(ONE_EIGHT_32);
+    OneEightMatrixDisplay->setPhysicalPanelScanRate(FOUR_SCAN_16PX_HIGH);
 }
 
 MatrixPanel::~MatrixPanel() {
     
 }
 
-//the used panel has a weird scanning order
+//the used panel has a weird scanning order so we remap the pixels to have a continuous canvas
 int MatrixPanel::pixel_mapper(int in_x, int in_y, int *out_x, int *out_y) {
+    if (in_x < 0 || in_x > 31) {
+        return 0;
+    }
+
+    if (in_y < 0 || in_y > 31) {
+        return 0;
+    }
+
     if (in_y < 8) {
         *out_x = in_x+32;
         *out_y = in_y;
@@ -71,21 +79,23 @@ void MatrixPanel::drawPixel(int16_t x, int16_t y, uint16_t color) {
 };
 
 void MatrixPanel::drawLine(int x0, int y0, int x1, int y1, uint8_t red, uint8_t grn, uint8_t blu) {
-    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int dx = abs(x1 - x0);
+    int sx = x0 < x1 ? 1 : -1;
+    int dy = abs(y1 - y0);
+    int sy = y0 < y1 ? 1 : -1;
     int err = (dx > dy ? dx : -dy) / 2;
 
     while (drawPixel(x0, y0, red, grn, blu), x0 != x1 || y0 != y1) {
         int e2 = err;
-        if (e2 > -dx) { err -= dy; x0 += sx; }
-        if (e2 <  dy) { err += dx; y0 += sy; }
+        if (e2 > -dx) { 
+            err -= dy; 
+            x0 += sx; 
+        }
+        if (e2 <  dy) {
+            err += dx;
+            y0 += sy;
+        }
     }
-}
-
-void swapInt(int &a, int &b) {
-    int temp = a;
-    a = b;
-    b = temp;
 }
 
 void MatrixPanel::drawPixelHSV(int16_t x, int16_t y, float H, float S,float V){
