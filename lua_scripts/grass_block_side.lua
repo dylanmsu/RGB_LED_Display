@@ -22,9 +22,9 @@ for j=0,15 do
 		red = grass_block_side[j+1][3*i+1]
 		grn = grass_block_side[j+1][3*i+2]
 		blu = grass_block_side[j+1][3*i+3]
-		drawPixel(i*2,   j*2,   red,grn,blu)
-		drawPixel(i*2+1, j*2,   red,grn,blu)
-		drawPixel(i*2,   j*2+1, red,grn,blu)
-		drawPixel(i*2+1, j*2+1, red,grn,blu)
+		matrix.drawPixel(i*2,   j*2,   red,grn,blu)
+		matrix.drawPixel(i*2+1, j*2,   red,grn,blu)
+		matrix.drawPixel(i*2,   j*2+1, red,grn,blu)
+		matrix.drawPixel(i*2+1, j*2+1, red,grn,blu)
 	end
 end

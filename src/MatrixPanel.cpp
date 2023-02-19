@@ -15,11 +15,12 @@ MatrixPanel::MatrixPanel(/* args */) : Adafruit_GFX(32, 32)
 
     dma_display = new MatrixPanel_I2S_DMA(mxconfig);
     dma_display->begin();
-    dma_display->setBrightness8(4);
+    dma_display->setBrightness8(255);
     fillScreen(0x0000);
 
     OneEightMatrixDisplay = new VirtualMatrixPanel((*dma_display), 1, 1, 32, 32, true, false);
     OneEightMatrixDisplay->setPhysicalPanelScanRate(FOUR_SCAN_16PX_HIGH);
+    //OneEightMatrixDisplay->setPhysicalPanelScanRate(ONE_EIGHT_16);
 }
 
 MatrixPanel::~MatrixPanel() {

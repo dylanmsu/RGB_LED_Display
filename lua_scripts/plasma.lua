@@ -10,7 +10,7 @@ while (true) do
             v = v + math.cos((y * (128 - wibble)  + time_counter)*((2*math.pi)/32768.0)) * 32767.0;
             v = v + math.sin((y * x * ((math.cos(-time_counter*((2*math.pi)/256.0)) * 128.0) + 128) / 8)*((2*math.pi)/32768.0)) * 32767.0;
 
-            drawPixelHSV(x, y, math.floor((v/258.0) + 127)%360, 100, 100);
+            matrix.drawPixelHSV(x, y, math.floor((v/258.0) + 127)%360, 100, 100);
         end
     end
     time_counter = time_counter + 1;

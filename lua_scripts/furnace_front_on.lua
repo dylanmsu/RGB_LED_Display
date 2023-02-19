@@ -22,9 +22,9 @@ for j=0,15 do
 		red = furnace_front_on[j+1][3*i+1]
 		grn = furnace_front_on[j+1][3*i+2]
 		blu = furnace_front_on[j+1][3*i+3]
-		drawPixel(i*2,   j*2,   red,grn,blu)
-		drawPixel(i*2+1, j*2,   red,grn,blu)
-		drawPixel(i*2,   j*2+1, red,grn,blu)
-		drawPixel(i*2+1, j*2+1, red,grn,blu)
+		matrix.drawPixel(i*2,   j*2,   red,grn,blu)
+		matrix.drawPixel(i*2+1, j*2,   red,grn,blu)
+		matrix.drawPixel(i*2,   j*2+1, red,grn,blu)
+		matrix.drawPixel(i*2+1, j*2+1, red,grn,blu)
 	end
 end

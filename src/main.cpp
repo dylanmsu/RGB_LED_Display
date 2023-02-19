@@ -2,6 +2,7 @@
 #include <driver/sdmmc_defs.h>
 #include <driver/sdmmc_types.h>
 #include <driver/sdmmc_host.h>
+#include <driver/gpio.h>
 #include <sdmmc_cmd.h>
 #include <vector>
 #include <esp_vfs_fat.h>
@@ -44,6 +45,8 @@ const char* ntpServer = "pool.ntp.org";
 
 // Variable to save current epoch time
 unsigned long epochTime;
+
+xQueueHandle interputQueue;
 
 // Function that gets current epoch time
 /*unsigned long getTime() {
@@ -121,6 +124,39 @@ void init_fat() {
     sdmmc_card_print_info(stdout, mount_card);
 }
 
+void run_lua() {
+    int error = luaL_dofile(lua_state, MOUNT_POINT"/script.lua");
+    if (error) {
+        matrixPanel.setTextColor(0b0001100000000000);
+        switch (error)
+        {
+        case LUA_YIELD:
+            matrixPanel.print("Yield\nerror");
+            break;
+        case LUA_ERRRUN:
+            matrixPanel.print("errrun");
+            break;
+        case LUA_ERRSYNTAX:
+            matrixPanel.print("errsyntax");
+            break;
+        case LUA_ERRMEM:
+            matrixPanel.print("errmem");
+            break;
+        case LUA_ERRERR:
+            matrixPanel.print("errerr");
+            break;
+        
+        default:
+            matrixPanel.print("unknown");
+            break;
+        }
+        Serial.println("LUA ERROR: " + String(lua_tostring(lua_state, -1)));
+        //scrollString(String(lua_tostring(lua_state, -1)));
+
+        lua_pop(lua_state, 1);
+    }//*/
+}
+
 static int lua_delay(lua_State *lua_state) {
     int a = luaL_checkinteger(lua_state, 1);
     delay(a);
@@ -174,7 +210,40 @@ void scrollString(String str) {
     Serial.println("done");
 }
 
+static void IRAM_ATTR gpio_interrupt_handler(void *args)
+{
+    int pinNumber = (int)args;
+    xQueueSendFromISR(interputQueue, &pinNumber, NULL);
+}
+
+void ButtonB_task(void *params)
+{
+    int pinNumber, count = 0;
+    while (true)
+    {
+        if (xQueueReceive(interputQueue, &pinNumber, portMAX_DELAY))
+        {
+            matrixPanel.fillScreen(0x0000);
+            lua_pop(lua_state, 1);
+            delay(100);
+            run_lua();
+        }
+    }
+}
+
 void setup() {
+    gpio_pad_select_gpio((gpio_num_t)BUTTON_B);
+    gpio_set_direction((gpio_num_t)BUTTON_B, GPIO_MODE_INPUT);
+    gpio_pulldown_en((gpio_num_t)BUTTON_B);
+    gpio_pullup_dis((gpio_num_t)BUTTON_B);
+    gpio_set_intr_type((gpio_num_t)BUTTON_B, GPIO_INTR_POSEDGE);
+
+    interputQueue = xQueueCreate(10, sizeof(int));
+    xTaskCreate(ButtonB_task, "ButtonB_task", 2048, NULL, 1, NULL);
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add((gpio_num_t)BUTTON_B, gpio_interrupt_handler, (void *)BUTTON_B);
+
     /*BLEDevice::init("Long name works now");
     BLEServer *pServer = BLEDevice::createServer();
     BLEService *pService = pServer->createService(SERVICE_UUID);
@@ -211,36 +280,24 @@ void setup() {
     //lua_register(lua_state, "syncTime", (const lua_CFunction) &lua_syncTime);
     lua_register(lua_state, "delay", (const lua_CFunction) &lua_delay);
 
-    // run the lua script from the sd card
-    int error = luaL_dofile(lua_state, MOUNT_POINT"/script.lua");
-    if (error) {
-        switch (error)
-        {
-        case LUA_YIELD:
-            matrixPanel.print("yield");
-            break;
-        case LUA_ERRRUN:
-            matrixPanel.print("errrun");
-            break;
-        case LUA_ERRSYNTAX:
-            matrixPanel.print("errsyntax");
-            break;
-        case LUA_ERRMEM:
-            matrixPanel.print("errmem");
-            break;
-        case LUA_ERRERR:
-            matrixPanel.print("errerr");
-            break;
-        
-        default:
-            matrixPanel.print("unknown");
+    DIR* dir = opendir(MOUNT_POINT"/");
+
+    while (true) {
+        struct dirent* de = readdir(dir);
+        if (!de) {
             break;
         }
-        Serial.println("LUA ERROR: " + String(lua_tostring(lua_state, -1)));
-        //scrollString(String(lua_tostring(lua_state, -1)));
 
-        lua_pop(lua_state, 1);
-    }//*/
+        String filename = String(de->d_name);
+        String extention = filename.substring(1 + filename.lastIndexOf("."));
+        if (extention == "lua") {
+            String base = filename.substring(0, filename.lastIndexOf("."));
+            printf("found lua script: \"%s\"\n\r", base);
+        }
+    }
+
+    // run the lua script from the sd card
+    run_lua();
 }
 
 void loop() {
