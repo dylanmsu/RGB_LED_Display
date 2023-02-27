@@ -15,7 +15,7 @@ MatrixPanel::MatrixPanel(/* args */) : Adafruit_GFX(32, 32)
 
     dma_display = new MatrixPanel_I2S_DMA(mxconfig);
     dma_display->begin();
-    dma_display->setBrightness8(255);
+    dma_display->setBrightness8(4);
     fillScreen(0x0000);
 
     OneEightMatrixDisplay = new VirtualMatrixPanel((*dma_display), 1, 1, 32, 32, true, false);
@@ -62,6 +62,10 @@ void MatrixPanel::drawPixel(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint
     int i,j = 0;
     pixel_mapper(x, y, &i, &j);
     dma_display->drawPixelRGB888(i, j, red, grn, blu);
+}
+
+void MatrixPanel::setBrightness(uint8_t brightness) {
+    dma_display->setBrightness8(brightness);
 }
 
 void MatrixPanel::fillScreen(uint16_t color) {
@@ -183,76 +187,3 @@ void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8
 		}
 	}
 }
-
-//creates a filled polygon with n = the amount of corners
-/*void MatrixPanel::fillPoly(float *px, float *py, uint n, uint8_t r, uint8_t g, uint8_t b) 
-{
-    int IMG_TOP = py[0];
-    int IMG_BOT = py[0];
-    int IMG_LEF = px[0];
-    int IMG_RIG = px[0];
-	int MAX_POLY_CORNERS = n;
-	int polyCorners = n;
-	int nodes;
-	int nodeX[MAX_POLY_CORNERS] = {};
-	int pixelY;
-	int i;
-	int j;
-	int swap;
-
-    // Find maximum and minimum in all array elements.
-    for (i = 1; i < MAX_POLY_CORNERS; i++) {
-        if (py[i] > IMG_TOP)
-            IMG_TOP = py[i];
-        if (py[i] < IMG_BOT)
-            IMG_BOT = py[i];
-        if (px[i] > IMG_RIG)
-            IMG_RIG = px[i];
-        if (px[i] < IMG_LEF)
-            IMG_LEF = px[i];
-    }
-	
-	for (pixelY=IMG_TOP; pixelY<IMG_BOT; pixelY++) {
-		nodes = 0; j = polyCorners-1;
-		for (i=0; i<polyCorners; i++){
-			if ((py[i]<pixelY && py[j]>=pixelY) || (py[j]<pixelY && py[i]>=pixelY)) {
-				nodeX[nodes++] = (px[i]+(pixelY-py[i])/(py[j]-py[i])*(px[j]-px[i]));
-			}
-			j=i;
-		}
-		
-		i=0;
-		while(i<nodes-1){
-			if (nodeX[i]>nodeX[i+1]) {
-				swap=nodeX[i];
-                nodeX[i]=nodeX[i+1]; 
-                nodeX[i+1]=swap; 
-                if (i) {
-                    i--;
-                }
-            } else {
-				i++;
-			}
-		}
-		
-		
-        for (i=0; i<nodes; i+=2){
-            int nodeXi = nodeX[i];
-            int nodeXii = nodeX[i+1];
-            if (nodeXi>=IMG_RIG) {
-                break;
-            }
-            if (nodeXii>IMG_LEF) {
-                if (nodeXi<IMG_LEF) {
-                    nodeXi=IMG_LEF;
-                }
-                if (nodeXii>IMG_RIG) {
-                    nodeXii = IMG_RIG;
-                }
-                for (int pixelX=nodeXi; pixelX<nodeXii; pixelX++) {
-                    drawPixel(pixelX, pixelY, r, g, b);
-                }
-            }
-	    }
-    }
-}*/

@@ -8,6 +8,7 @@
 #include <esp_vfs_fat.h>
 #include <nvs_flash.h>
 #include <esp_vfs.h>
+#include <string>
 //#include <WiFi.h>
 //#include <time.h>
 //#include <BLEDevice.h>
@@ -47,6 +48,12 @@ const char* ntpServer = "pool.ntp.org";
 unsigned long epochTime;
 
 xQueueHandle interputQueue;
+
+TaskHandle_t lua_task_handle;
+
+int buttonCount = 0;
+
+std::vector<String> files;
 
 // Function that gets current epoch time
 /*unsigned long getTime() {
@@ -124,39 +131,6 @@ void init_fat() {
     sdmmc_card_print_info(stdout, mount_card);
 }
 
-void run_lua() {
-    int error = luaL_dofile(lua_state, MOUNT_POINT"/script.lua");
-    if (error) {
-        matrixPanel.setTextColor(0b0001100000000000);
-        switch (error)
-        {
-        case LUA_YIELD:
-            matrixPanel.print("Yield\nerror");
-            break;
-        case LUA_ERRRUN:
-            matrixPanel.print("errrun");
-            break;
-        case LUA_ERRSYNTAX:
-            matrixPanel.print("errsyntax");
-            break;
-        case LUA_ERRMEM:
-            matrixPanel.print("errmem");
-            break;
-        case LUA_ERRERR:
-            matrixPanel.print("errerr");
-            break;
-        
-        default:
-            matrixPanel.print("unknown");
-            break;
-        }
-        Serial.println("LUA ERROR: " + String(lua_tostring(lua_state, -1)));
-        //scrollString(String(lua_tostring(lua_state, -1)));
-
-        lua_pop(lua_state, 1);
-    }//*/
-}
-
 static int lua_delay(lua_State *lua_state) {
     int a = luaL_checkinteger(lua_state, 1);
     delay(a);
@@ -193,29 +167,99 @@ static int lua_printText(lua_State *lua_state) {
     return 0;
 }
 
-void scrollString(String str) {
-    matrixPanel.fillScreen(0x0000);
+void scrollString(String str, int height, uint16_t bg, uint16_t fg) {
+    matrixPanel.fillRect(0,height,32,7,0x0000);
     matrixPanel.setTextWrap(false);
     matrixPanel.setTextSize(1);
     int charWidth = 6;
     int pxwidth = (str.length()*charWidth);
-    for (int32_t x=charWidth; x>=-pxwidth; x--) {
+    for (int32_t x=charWidth; x>=-pxwidth+32; x--) {
+        matrixPanel.fillRect(0,height,32,7,0x0000);
         //matrixPanel.print(str);
         for (int chr=0; chr<str.length(); chr++) {
-            matrixPanel.drawChar(x + charWidth*chr,0,str[chr],0xffff,0x0000,1);
+            matrixPanel.drawChar(x + charWidth*chr,height,str[chr],fg,bg,1);
         }
         delay(60);
-        matrixPanel.fillScreen(0x0000);
     }
-    Serial.println("done");
+    delay(500);
+    for (int chr=0; chr<str.length(); chr++) {
+        matrixPanel.drawChar(charWidth*chr,height,str[chr],fg,bg,1);
+    }
 }
 
-static void IRAM_ATTR gpio_interrupt_handler(void *args)
+/*static void IRAM_ATTR gpio_interrupt_handler(void *args)
 {
     int pinNumber = (int)args;
     xQueueSendFromISR(interputQueue, &pinNumber, NULL);
-}
+}*/
 
+
+/*void show_menu(int selected) {
+    matrixPanel.fillScreen(0x0000);
+    for (int i=0; i<files.size(); i++) {
+        //matrixPanel.setTextWrap(false);
+        if (i != selected) {
+            matrixPanel.setTextSize(1);
+            for (int chr=0; chr<files[i].length(); chr++) {
+                matrixPanel.drawChar(6*chr,i*8,files[i][chr],0xffff,0x0000,1);
+            }
+        }
+    }
+
+    scrollString(files[selected], selected*8, 0xffff, 0x0000);
+}*/
+
+/*void run_lua_task(void * param) {
+    String script = *(String *)param;
+    String file = ("/sdcard/" + script + ".lua");
+    int error = luaL_dofile(lua_state, file.c_str());
+    if (error) {
+        switch (error)
+        {
+        case LUA_YIELD:
+            matrixPanel.print("Yield\nerror");
+            break;
+        case LUA_ERRRUN:
+            matrixPanel.print("errrun");
+            break;
+        case LUA_ERRSYNTAX:
+            matrixPanel.print("errsyntax");
+            break;
+        case LUA_ERRMEM:
+            matrixPanel.print("errmem");
+            break;
+        case LUA_ERRERR:
+            matrixPanel.print("errerr");
+            break;
+        
+        default:
+            matrixPanel.print("unknown");
+            break;
+        }
+        printf("LUA ERROR: %s\r\n", String(lua_tostring(lua_state, -1)));
+        //scrollString(String(lua_tostring(lua_state, -1)));
+
+        lua_pop(lua_state, 1);
+    }
+    vTaskDelete(NULL);
+}*/
+
+/*void ButtonA_task(void *params)
+{
+    int pinNumber = 0;
+    while (1) {
+        if (xQueueReceive(interputQueue, &pinNumber, portMAX_DELAY))
+        {
+            lua_pop(lua_state, 1);
+            vTaskDelete(lua_task_handle);
+            buttonCount = (buttonCount + 1);
+            //printf("hello\n");
+            xTaskCreate(&run_lua_task,"lua task button A", 4096*8, &files[buttonCount], 0, &lua_task_handle);
+        }
+    }
+    vTaskDelete(NULL);
+}*/
+/*
 void ButtonB_task(void *params)
 {
     int pinNumber, count = 0;
@@ -223,27 +267,42 @@ void ButtonB_task(void *params)
     {
         if (xQueueReceive(interputQueue, &pinNumber, portMAX_DELAY))
         {
-            matrixPanel.fillScreen(0x0000);
-            lua_pop(lua_state, 1);
-            delay(100);
-            run_lua();
+            //
         }
     }
-}
+    vTaskDelete(NULL);
+}*/
 
-void setup() {
-    gpio_pad_select_gpio((gpio_num_t)BUTTON_B);
-    gpio_set_direction((gpio_num_t)BUTTON_B, GPIO_MODE_INPUT);
-    gpio_pulldown_en((gpio_num_t)BUTTON_B);
-    gpio_pullup_dis((gpio_num_t)BUTTON_B);
-    gpio_set_intr_type((gpio_num_t)BUTTON_B, GPIO_INTR_POSEDGE);
+/*void ButtonC_task(void *params)
+{
+    int pinNumber = 0;
+    while (1) {
+        if (xQueueReceive(interputQueue, &pinNumber, portMAX_DELAY))
+        {
+            lua_pop(lua_state, 1);
+            vTaskDelete(lua_task_handle);
+            buttonCount = (buttonCount - 1);
+            //printf("hello\n");
+            xTaskCreate(&run_lua_task,"lua task button C", 4096*8, &files[buttonCount], 0, &lua_task_handle);
+        }
+    }
+    vTaskDelete(NULL);
+}*/
+
+/*void setup_interrupt_ISR(gpio_num_t pin, char *name, TaskFunction_t pvTaskCode) {
+    gpio_pad_select_gpio(pin);
+    gpio_set_direction(pin, GPIO_MODE_INPUT);
+    gpio_pulldown_en(pin);
+    gpio_pullup_dis(pin);
+    gpio_set_intr_type(pin, GPIO_INTR_POSEDGE);
 
     interputQueue = xQueueCreate(10, sizeof(int));
-    xTaskCreate(ButtonB_task, "ButtonB_task", 2048, NULL, 1, NULL);
+    xTaskCreate(pvTaskCode, name, 2048, &buttonCount, 1, NULL);
 
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add((gpio_num_t)BUTTON_B, gpio_interrupt_handler, (void *)BUTTON_B);
+    gpio_isr_handler_add(pin, gpio_interrupt_handler, (void *)pin);
+}*/
 
+void setup() {
     /*BLEDevice::init("Long name works now");
     BLEServer *pServer = BLEDevice::createServer();
     BLEService *pService = pServer->createService(SERVICE_UUID);
@@ -267,8 +326,6 @@ void setup() {
     
     setCpuFrequencyMhz(240);
 
-    Serial.begin(115200);
-
     lua_state = luaL_newstate();
     luaL_requiref( lua_state, "math", luaopen_math, 1 );
     luaL_requiref( lua_state, "matrix", lua_libs.luaopen_matrix_lib, 1 );
@@ -280,10 +337,9 @@ void setup() {
     //lua_register(lua_state, "syncTime", (const lua_CFunction) &lua_syncTime);
     lua_register(lua_state, "delay", (const lua_CFunction) &lua_delay);
 
-    DIR* dir = opendir(MOUNT_POINT"/");
-
-    while (true) {
-        struct dirent* de = readdir(dir);
+    /*DIR* dir = opendir(MOUNT_POINT"/");
+    struct dirent* de;
+    while (de = readdir(dir)) {
         if (!de) {
             break;
         }
@@ -292,12 +348,40 @@ void setup() {
         String extention = filename.substring(1 + filename.lastIndexOf("."));
         if (extention == "lua") {
             String base = filename.substring(0, filename.lastIndexOf("."));
-            printf("found lua script: \"%s\"\n\r", base);
+            files.push_back(base);
+            //printf("found: %s\r\n", base);
         }
+    }*/
+
+    //buttonCount = 0;
+    //gpio_install_isr_service(0);
+    //setup_interrupt_ISR((gpio_num_t)BUTTON_A, "ButtonA_task", ButtonA_task);
+    //setup_interrupt_ISR((gpio_num_t)BUTTON_B, "ButtonB_task", ButtonB_task);
+    //setup_interrupt_ISR((gpio_num_t)BUTTON_C, "ButtonC_task", ButtonC_task);
+
+    //xTaskCreate(&run_lua_task,"lua task", 4096*8, &files[0], 0, &lua_task_handle);
+    //run_lua_task(&files[0]);
+
+    try
+    {
+        String file = "/sdcard/cube.lua";
+        int error = luaL_dofile(lua_state, file.c_str());
+        printf("hello1\r\n");
+        fflush(stdout);
+    }
+    catch (const std::exception &exc)
+    {
+        // catch anything thrown within try block that derives from std::exception
+        printf("error: %s\r\n", exc.what());
+        fflush(stdout);
     }
 
-    // run the lua script from the sd card
-    run_lua();
+    /*delay(5000);
+    vTaskDelete(lua_task_handle);
+
+    xTaskCreate(&run_lua_task,"lua task", 4096*8, &files[1], 0, &lua_task_handle);
+    delay(5000);
+    vTaskDelete(lua_task_handle);*/
 }
 
 void loop() {

@@ -26,6 +26,7 @@ public:
     //void fillPoly(float *px, float *py, uint n, uint8_t r, uint8_t g, uint8_t b);
     void fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8_t b);
     void drawPixelHSV(int16_t x, int16_t y, float H, float S, float V);
+    void setBrightness(uint8_t brightness);
     
     // adafruit overrides
     void drawPixel(int16_t x, int16_t y, uint16_t color) override;

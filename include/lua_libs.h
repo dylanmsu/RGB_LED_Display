@@ -13,15 +13,17 @@ extern "C" {
 class Lua_libs
 {
 private:
-    static lua_State *lua;
-    static MatrixPanel *mtrx;
-    static Graphics3D *graphics3d;
+    static lua_State *_lua;
+    static MatrixPanel *_matrix;
+    static Graphics3D *_graphics3d;
 
     static int lua_drawPixel(lua_State *lua_state);
     static int lua_drawPixelHSV(lua_State *lua_state);
     static int lua_drawLine(lua_State *lua_state);
     static int lua_fillQuat(lua_State *lua_state);
     static int lua_clearScreen(lua_State *lua_state);
+    static int lua_setBrightness(lua_State *lua_state);
+    static int lua_drawCircle(lua_State *lua_state);
 
     static int lua_push3dVertex(lua_State *lua_state);
     static int lua_push3dQuat(lua_State *lua_state);

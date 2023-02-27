@@ -15,9 +15,12 @@ class Graphics3D
 private:
     MatrixPanel *matrixPanel;
 
-    std::vector<float> vertices;
-    std::vector<int> faces;
-    std::vector<float> face_colors;
+    float *vertices;
+    int *faces;
+    float *face_colors;
+
+    int face_count;
+    int vert_count;
 
     bool enable_specular = false;
     bool enable_diffuse = true;
@@ -29,7 +32,7 @@ public:
     Graphics3D(MatrixPanel *matrixPanel);
     ~Graphics3D();
 
-    void drawSolid(double *verts, int *faces, float *colors, int facelen, double zoom);
+    void drawSolid(float *verts, int *faces, float *colors, int facelen, double zoom);
     void pushVertex(float x, float y, float z);
     void pushQuat(int p1, int p2, int p3, int p4, uint8_t r, uint8_t g, uint8_t b);
     void setRotation(float x, float y, float z);

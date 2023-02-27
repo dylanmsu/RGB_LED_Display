@@ -9,41 +9,40 @@ Graphics3D::~Graphics3D()
 {
 }
 
-double *rotate(double *v, int len, double rX, double rY, double rZ)
+void rotate(const float *source_verts, float *dest_verts, int len, double rX, double rY, double rZ)
 {
-    double cosa = cos(rZ);
-    double sina = sin(rZ);
+    float cosa = cos(rZ);
+    float sina = sin(rZ);
 
-    double cosb = cos(rY);
-    double sinb = sin(rY);
+    float cosb = cos(rY);
+    float sinb = sin(rY);
 
-    double cosc = cos(rX);
-    double sinc = sin(rX);
+    float cosc = cos(rX);
+    float sinc = sin(rX);
 
-    double Axx = cosa*cosb;
-    double Axy = cosa*sinb*sinc - sina*cosc;
-    double Axz = cosa*sinb*cosc + sina*sinc;
+    float Axx = cosa*cosb;
+    float Axy = cosa*sinb*sinc - sina*cosc;
+    float Axz = cosa*sinb*cosc + sina*sinc;
 
-    double Ayx = sina*cosb;
-    double Ayy = sina*sinb*sinc + cosa*cosc;
-    double Ayz = sina*sinb*cosc - cosa*sinc;
+    float Ayx = sina*cosb;
+    float Ayy = sina*sinb*sinc + cosa*cosc;
+    float Ayz = sina*sinb*cosc - cosa*sinc;
 
-    double Azx = -sinb;
-    double Azy = cosb*sinc;
-    double Azz = cosb*cosc;
+    float Azx = -sinb;
+    float Azy = cosb*sinc;
+    float Azz = cosb*cosc;
 
     // apply matrix transformation to every vertex
     for (int i=0;i<len*3;i+=3)
     {
-        double px = v[i+0];
-        double py = v[i+1];
-        double pz = v[i+2];
+        float px = source_verts[i+0];
+        float py = source_verts[i+1];
+        float pz = source_verts[i+2];
 
-        v[i+0] = Axx*px + Axy*py + Axz*pz;
-        v[i+1] = Ayx*px + Ayy*py + Ayz*pz;
-        v[i+2] = Azx*px + Azy*py + Azz*pz;
-    }	
-    return v;
+        dest_verts[i+0] = Axx*px + Axy*py + Axz*pz;
+        dest_verts[i+1] = Ayx*px + Ayy*py + Ayz*pz;
+        dest_verts[i+2] = Azx*px + Azy*py + Azz*pz;
+    }
 }
 
 //sorts an array and returns an array of the indices
@@ -78,7 +77,7 @@ float min(float a, float b){
 }
 
 //gets all the Z values of the faces
-void Zarr(double *verts, int *faces, int len, float *arr){
+void Zarr(float *verts, int *faces, int len, float *arr){
 	for (int i=0;i<len;i++){
 		float c = 0;
 		for (int j=0;j<4;j++){
@@ -105,7 +104,7 @@ void cross(const float *a, const float *b, float *out){
 }
 
 //gets the normal vector of a face
-void getNormal(const double *verts, const int *faces, const int len, const int index, float *out){
+void getNormal(const float *verts, const int *faces, const int len, const int index, float *out){
 	float edgeA[3] = {0,0,0};
 	float edgeB[3] = {0,0,0};
 	for (int i=0;i<3;i++){ 
@@ -137,7 +136,7 @@ float pyth(float vec1[3], float vec2[3]){
     return x*x+y*y+z*z;
 }
 
-void faceCenter(double *verts, int *faces, int k, float center[3]){
+void faceCenter(float *verts, int *faces, int k, float center[3]){
     for(int i=0; i<4; i++){
         int vert = faces[k*4 + i];
         center[0] += verts[vert*3 + 0];
@@ -150,8 +149,8 @@ void faceCenter(double *verts, int *faces, int k, float center[3]){
 }
 
 //void drawSolid(double *verts, int *faces, int facelen, float r, float g, float b, uint8_t **buffer){
-void Graphics3D::drawSolid(double *verts, int *faces, float *colors, int facelen, double zoom){
-    int verts_per_face = 4;
+void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen, double zoom){
+    const int verts_per_face = 4;
 	const int cx = 32/2;
     const int cy = 32/2;
     
@@ -173,7 +172,7 @@ void Graphics3D::drawSolid(double *verts, int *faces, float *colors, int facelen
         float px[verts_per_face] = {0};
         float py[verts_per_face] = {0};
 
-        // here is where the 3d coordinates are mapped onto a 2d  xz surface
+        // here is where the 3d coordinates are mapped onto a 2d xz surface
         for (int k=0; k<verts_per_face; k++) {
             x[k] =  verts[faces[i*verts_per_face+k]*3+0]+cameraPos[0];
             y =     verts[faces[i*verts_per_face+k]*3+1]+cameraPos[1];
@@ -268,20 +267,31 @@ void Graphics3D::drawSolid(double *verts, int *faces, float *colors, int facelen
 }
 
 void Graphics3D::pushVertex(float x, float y, float z) {
-    vertices.push_back(x);
-    vertices.push_back(y);
-    vertices.push_back(z);
+    vertices = (float *) realloc(vertices, sizeof(float *)*(vert_count + 1)*3);
+    vertices[vert_count*3 + 0] = x;
+    vertices[vert_count*3 + 1] = y;
+    vertices[vert_count*3 + 2] = z;
+    vert_count += 1;
 }
 
 void Graphics3D::pushQuat(int p1, int p2, int p3, int p4, uint8_t r, uint8_t g, uint8_t b) {
-    faces.push_back(p1);
-    faces.push_back(p2);
-    faces.push_back(p3);
-    faces.push_back(p4);
+    /* Reallocating memory */
+    faces = (int *) realloc(faces, sizeof(int *)*(face_count + 1)*4);
+    face_colors = (float *) realloc(face_colors, sizeof(float *)*(face_count + 1)*3);
 
-    face_colors.push_back(clamp(r/255.0,1,0));
-    face_colors.push_back(clamp(g/255.0,1,0));
-    face_colors.push_back(clamp(b/255.0,1,0));
+    printf("faces: %i\r\n", face_count);
+    fflush(stdout);
+
+    faces[face_count*4 + 0] = p1;
+    faces[face_count*4 + 1] = p2;
+    faces[face_count*4 + 2] = p3;
+    faces[face_count*4 + 3] = p4;
+
+    face_colors[face_count*3 + 0] = clamp(r/255.0,1,0);
+    face_colors[face_count*3 + 1] = clamp(g/255.0,1,0);
+    face_colors[face_count*3 + 2] = clamp(b/255.0,1,0);
+
+    face_count += 1;
 }
 
 void Graphics3D::setRotation(float x, float y, float z) {
@@ -291,14 +301,7 @@ void Graphics3D::setRotation(float x, float y, float z) {
 }
 
 void Graphics3D::drawMesh() {
-    double verts[vertices.size()];
-    std::copy(vertices.begin(), vertices.end(), verts);
-
-    int quats[faces.size()];
-    std::copy(faces.begin(), faces.end(), quats);
-
-    float colors[face_colors.size()];
-    std::copy(face_colors.begin(), face_colors.end(), colors);
-
-    drawSolid(rotate(verts,vertices.size()/3,rotation[0],rotation[1],rotation[2]),quats,colors,faces.size()/4,32);
+    float rotated_verts[vert_count*3] = {0};
+    rotate(vertices, rotated_verts, vert_count, rotation[0], rotation[1], rotation[2]);
+    drawSolid(rotated_verts,faces,face_colors,face_count,32);
 }
