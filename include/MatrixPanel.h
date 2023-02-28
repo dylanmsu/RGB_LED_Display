@@ -14,10 +14,13 @@ private:
     MatrixPanel_I2S_DMA *dma_display;
     VirtualMatrixPanel  *OneEightMatrixDisplay;
 
+    int _width = 0;
+    int _height = 0;
+
     int pixel_mapper(int in_x, int in_y, int *out_x, int *out_y);
 
 public:
-    MatrixPanel(/* args */);
+    MatrixPanel(int width, int height);
     ~MatrixPanel();
 
     void drawPixel(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint8_t blu);
@@ -27,6 +30,8 @@ public:
     void fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8_t b);
     void drawPixelHSV(int16_t x, int16_t y, float H, float S, float V);
     void setBrightness(uint8_t brightness);
+    int getWidth();
+    int getHeight();
     
     // adafruit overrides
     void drawPixel(int16_t x, int16_t y, uint16_t color) override;

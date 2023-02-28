@@ -1,6 +1,9 @@
 #include "MatrixPanel.h"
 
-MatrixPanel::MatrixPanel(/* args */) : Adafruit_GFX(32, 32)
+MatrixPanel::MatrixPanel(int width, int height) 
+    : Adafruit_GFX(width, height)
+    , _width(width)
+    , _height(height)
 {
     HUB75_I2S_CFG::i2s_pins _pins = {
         R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, 
@@ -8,7 +11,7 @@ MatrixPanel::MatrixPanel(/* args */) : Adafruit_GFX(32, 32)
         LAT_PIN, OE_PIN, CLK_PIN
     };
 
-    HUB75_I2S_CFG mxconfig(64, 16, 1, _pins);
+    HUB75_I2S_CFG mxconfig(2*_width, _height/2, 1, _pins);
 
     mxconfig.clkphase = false;
     mxconfig.driver   = HUB75_I2S_CFG::SHIFTREG;
@@ -18,7 +21,7 @@ MatrixPanel::MatrixPanel(/* args */) : Adafruit_GFX(32, 32)
     dma_display->setBrightness8(4);
     fillScreen(0x0000);
 
-    OneEightMatrixDisplay = new VirtualMatrixPanel((*dma_display), 1, 1, 32, 32, true, false);
+    OneEightMatrixDisplay = new VirtualMatrixPanel((*dma_display), 1, 1, _width, _height, true, false);
     OneEightMatrixDisplay->setPhysicalPanelScanRate(FOUR_SCAN_16PX_HIGH);
     //OneEightMatrixDisplay->setPhysicalPanelScanRate(ONE_EIGHT_16);
 }
@@ -140,7 +143,6 @@ void MatrixPanel::drawPixelHSV(int16_t x, int16_t y, float H, float S,float V){
 }
 
 void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8_t b){
-	int w = 32;
 	int IMG_TOP = min(min(min(py[0],py[1]),py[2]),py[3]);
 	int IMG_BOT = max(max(max(py[0],py[1]),py[2]),py[3])+1;
 	int IMG_LEF = min(min(min(px[0],px[1]),px[2]),px[3]);
@@ -186,4 +188,12 @@ void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8
 			}
 		}
 	}
+}
+
+int MatrixPanel::getWidth() {
+    return _width;
+}
+
+int MatrixPanel::getHeight() {
+    return _height;
 }

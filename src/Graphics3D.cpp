@@ -151,8 +151,8 @@ void faceCenter(float *verts, int *faces, int k, float center[3]){
 //void drawSolid(double *verts, int *faces, int facelen, float r, float g, float b, uint8_t **buffer){
 void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen, double zoom){
     const int verts_per_face = 4;
-	const int cx = 32/2;
-    const int cy = 32/2;
+	const int cx = matrixPanel->getWidth()/2;
+    const int cy = matrixPanel->getHeight()/2;
     
     int buf[facelen] = {0};
     float Zarray[facelen] = {0};
@@ -160,17 +160,43 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
     Zarr(verts,faces,facelen,Zarray); //gets array of all the z positions of the faces and dump them in "Zarray"
 	sort(Zarray,facelen,buf);        //get sorted indices of the z array to apply the "painter’s algorithm"
     
+    float cameraPos[3] = {0, 4, 0};    //position of the camera
+
+    float x[verts_per_face] = {0};
+    float y = 0;
+    float z[verts_per_face] = {0};
+
+    float px[verts_per_face] = {0};
+    float py[verts_per_face] = {0};
+
+    
+
+    // color of the licht source
+    float lightColor[3] = {1,1,1};//white
+
+    // intensity of the light source
+    float lightPower = 100;
+
+    // position of the light source
+    float sun[3] = {-5,5,5};
+
+    // shininess of the specular highlights (if enabled)
+    float shininess = 10;
+
+    // color of the specular highlights (if enabled)
+    float specularColor[3] = {1,1,1};//white
+
+    float camNormal[3] = {cameraPos[0], cameraPos[1], cameraPos[2]};
+    normalize(camNormal);
+
+    float sunNormal[3] = {sun[0], sun[1], sun[2]};
+    if (enable_diffuse || enable_specular) {
+        normalize(sunNormal);
+    }
+
     for (int j=0;j<facelen;j++){
 		
 		int i = buf[j];
-        float cameraPos[3] = {0, 4, 0};    //position of the camera
-
-        float x[verts_per_face] = {0};
-        float y = 0;
-        float z[verts_per_face] = {0};
-
-        float px[verts_per_face] = {0};
-        float py[verts_per_face] = {0};
 
         // here is where the 3d coordinates are mapped onto a 2d xz surface
         for (int k=0; k<verts_per_face; k++) {
@@ -187,32 +213,15 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
 
         // the following code are for the shaders
         //http://www.opengl-tutorial.org/beginners-tutorials/tutorial-8-basic-shading/
-		
-        // diffuse color of the 3d face
-		float diffuseColor[3] = {colors[i*3 + 0], colors[i*3 + 1], colors[i*3 + 2]};
 
-        // color of the licht source
-		float lightColor[3] = {1,1,1};//white
+        // diffuse color of the 3d face
+        float diffuseColor[3] = {colors[i*3 + 0], colors[i*3 + 1], colors[i*3 + 2]};
 
         // color of the ambient licht
-		float ambientColor[3] = {colors[i*3 + 0]/10, colors[i*3 + 1]/10, colors[i*3 + 2]/10};
-
-        // intensity of the light source
-		float lightPower = 100;
-
-        // position of the light source
-		float sun[3] = {-5,5,5};
-
-        // shininess of the specular highlights (if enabled)
-        float shininess = 10;
-
-        // color of the specular highlights (if enabled)
-        float specularColor[3] = {1,1,1};//white
+        float ambientColor[3] = {colors[i*3 + 0]/10, colors[i*3 + 1]/10, colors[i*3 + 2]/10};
 
         // calculate the face normal and the normal pointing to the camera 
-        float camNormal[3] = {cameraPos[0], cameraPos[1], cameraPos[2]};
         float faceNormal[3] = {0};
-        normalize(camNormal);
         getNormal(verts, faces, facelen, i, faceNormal);
 
         //some crude optimization: if the face faces away from the camera, don't draw it.
@@ -220,11 +229,9 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
 
             // common to diffuse and specular:
             // calculate the normal pointing to the light source and calculate the distance to the face
-            float sunNormal[3] = {sun[0], sun[1], sun[2]};
             float dist_sq = 1;
             if (enable_diffuse || enable_specular) {
                 float centerFace[3] = {0};
-                normalize(sunNormal);
                 faceCenter(verts, faces, i, centerFace);
                 dist_sq = pyth(sun, centerFace);
             }
