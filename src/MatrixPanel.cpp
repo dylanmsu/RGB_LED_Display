@@ -35,53 +35,62 @@ MatrixPanel::~MatrixPanel() {
 //the used panel has a weird scanning order so we remap the pixels to have a continuous canvas
 int MatrixPanel::pixel_mapper(int in_x, int in_y, int *out_x, int *out_y) {
     if (in_x < 0 || in_x > 31) {
-        return 0;
+        return 1;
     }
 
     if (in_y < 0 || in_y > 31) {
-        return 0;
+        return 1;
     }
 
     if (in_y < 8) {
         *out_x = in_x+32;
         *out_y = in_y;
-        return 1;
+        return 0;
     } else if (in_y >= 8 && in_y < 16) {
         *out_x = in_x;
         *out_y = in_y-8;
-        return 1;
+        return 0;
     } else if (in_y >= 16 && in_y < 24) {
         *out_x = in_x+32;
         *out_y = in_y-8;
-        return 1;
+        return 0;
     } else if (in_y >= 24 && in_y < 32) {
         *out_x = in_x;
         *out_y = in_y-16;
-        return 1;
-    } else {
         return 0;
+    } else {
+        return 1;
     }
 }
 
 void MatrixPanel::drawPixel(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint8_t blu) {
     int i,j = 0;
-    pixel_mapper(x, y, &i, &j);
-    int idx = i + _width*2*j;
-    pixel_buffer[idx*3 + 0] = red;
-    pixel_buffer[idx*3 + 1] = grn;
-    pixel_buffer[idx*3 + 2] = blu;
-    //dma_display->drawPixelRGB888(i, j, red, grn, blu);
+    int err = pixel_mapper(x, y, &i, &j);
+    if (!err) {
+        int idx = i + _width*2*j;
+        pixel_buffer[idx*3 + 0] = red;
+        pixel_buffer[idx*3 + 1] = grn;
+        pixel_buffer[idx*3 + 2] = blu;
+        //dma_display->drawPixelRGB888(i, j, red, grn, blu);
+    } else {
+        // pixel is outside of range
+    }
 }
 
 void MatrixPanel::drawPixelRGBA(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint8_t blu, float alpha) {
     auto min = [](float a, float b) -> int {if (a>b) return b; else return a;};
 
     int i,j = 0;
-    pixel_mapper(x, y, &i, &j);
-    int idx = i + _width*2*j;
-    pixel_buffer[idx*3 + 0] += floor(min(red*alpha, 255));
-    pixel_buffer[idx*3 + 1] += floor(min(grn*alpha, 255));
-    pixel_buffer[idx*3 + 2] += floor(min(blu*alpha, 255));
+    int err = pixel_mapper(x, y, &i, &j);
+    if (!err) {
+        int idx = i + _width*2*j;
+        pixel_buffer[idx*3 + 0] = (pixel_buffer[idx*3 + 0]*(1.0f - alpha)) + floor(min(red*alpha, 255));
+        pixel_buffer[idx*3 + 1] = (pixel_buffer[idx*3 + 1]*(1.0f - alpha)) + floor(min(grn*alpha, 255));
+        pixel_buffer[idx*3 + 2] = (pixel_buffer[idx*3 + 2]*(1.0f - alpha)) + floor(min(blu*alpha, 255));
+        //dma_display->drawPixelRGB888(i, j, red*alpha, grn*alpha, blu*alpha);
+    } else {
+        // pixel is outside of range
+    }
 }
 
 void MatrixPanel::drawBuffer() {
