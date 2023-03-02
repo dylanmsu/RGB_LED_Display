@@ -22,6 +22,7 @@ i = 0.0
 while (true) do
     matrix.set3dRotation(i/2, i/3, i/5)
     matrix.draw3dsolid()
+    updateDisplay()
     delay(10)
     i = i + 0.1
     matrix.clearScreen()

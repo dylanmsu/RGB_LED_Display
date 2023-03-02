@@ -423,7 +423,12 @@ static int lua_getHours(lua_State *lua_state) {
 
 static int lua_getRandom(lua_State *lua_state) {
     lua_pushinteger(lua_state, esp_random());
-    return 0;
+    return 1;
+}
+
+static int lua_updateScreen(lua_State *lua_state) {
+    matrixPanel.drawBuffer();
+    return 1;
 }
 
 void list_files() {
@@ -492,6 +497,7 @@ void setup() {
     lua_register(lua_state, "getHours", (const lua_CFunction) &lua_getHours);
     lua_register(lua_state, "delay", (const lua_CFunction) &lua_delay);
     lua_register(lua_state, "random", (const lua_CFunction) &lua_getRandom);
+    lua_register(lua_state, "updateDisplay", (const lua_CFunction) &lua_updateScreen);
 
     list_files();
     /*for (int i=0; i<file_count; i++) {

@@ -17,6 +17,8 @@ private:
     int _width = 0;
     int _height = 0;
 
+    uint8_t *pixel_buffer;
+
     int pixel_mapper(int in_x, int in_y, int *out_x, int *out_y);
 
 public:
@@ -24,6 +26,7 @@ public:
     ~MatrixPanel();
 
     void drawPixel(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint8_t blu);
+    void drawPixelRGBA(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint8_t blu, float alpha);
     void drawLine(int x0, int y0, int x1, int y1, uint8_t red, uint8_t grn, uint8_t blu);
     void drawLineWu(float x0, float y0, float x1, float y1, uint8_t red, uint8_t grn, uint8_t blu);
     //void fillPoly(float *px, float *py, uint n, uint8_t r, uint8_t g, uint8_t b);
@@ -32,6 +35,8 @@ public:
     void setBrightness(uint8_t brightness);
     int getWidth();
     int getHeight();
+
+    void drawBuffer();
     
     // adafruit overrides
     void drawPixel(int16_t x, int16_t y, uint16_t color) override;

@@ -17,6 +17,7 @@ while (true) do
             matrix.drawPixelHSV(x, y, math.floor((v/258.0) + 127)%360, 100, 100);
         end
     end
+    updateDisplay()
     time_counter = time_counter + 1;
     cycles = cycles + 1;
     fps = fps + 1;

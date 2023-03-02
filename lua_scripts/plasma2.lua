@@ -57,6 +57,8 @@ while (true) do
         y4 = y4 - 1
     end
 
+    updateDisplay()
+
     mult = 0.001
     angle1 = angle1 + 3*mult;
     angle2 = angle2 - 7*mult;

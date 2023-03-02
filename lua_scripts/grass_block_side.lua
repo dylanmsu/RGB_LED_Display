@@ -28,3 +28,5 @@ for j=0,15 do
 		matrix.drawPixel(i*2+1, j*2+1, red,grn,blu)
 	end
 end
+
+updateDisplay()
