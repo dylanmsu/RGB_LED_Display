@@ -19,6 +19,7 @@ const luaL_Reg Lua_libs::matrixfunctions[] = {
     {"drawPixel",  lua_drawPixel},
     {"drawPixelHSV", lua_drawPixelHSV},
     {"drawLine", lua_drawLine},
+    {"drawLineWu", lua_drawLineWu},
     {"fillQuat", lua_fillQuat},
     {"drawCircle", lua_drawCircle},
     {"clearScreen", lua_clearScreen},
@@ -59,6 +60,18 @@ int Lua_libs::lua_drawLine(lua_State *lua_state) {
     int grn = luaL_checkinteger(lua_state, 6);
     int blu = luaL_checkinteger(lua_state, 7);
     _matrix->drawLine(x0, y0, x1, y1, red, grn, blu);
+    return 0;
+}
+
+int Lua_libs::lua_drawLineWu(lua_State *lua_state) {
+    float x0 = luaL_checknumber(lua_state, 1);
+    float y0 = luaL_checknumber(lua_state, 2);
+    float x1 = luaL_checknumber(lua_state, 3);
+    float y1 = luaL_checknumber(lua_state, 4);
+    int red = luaL_checkinteger(lua_state, 5);
+    int grn = luaL_checkinteger(lua_state, 6);
+    int blu = luaL_checkinteger(lua_state, 7);
+    _matrix->drawLineWu(x0, y0, x1, y1, red, grn, blu);
     return 0;
 }
 

@@ -106,6 +106,76 @@ void MatrixPanel::drawLine(int x0, int y0, int x1, int y1, uint8_t red, uint8_t 
     }
 }
 
+// https://rosettacode.org/wiki/Xiaolin_Wu's_line_algorithm
+void MatrixPanel::drawLineWu(float x0, float y0, float x1, float y1, uint8_t red, uint8_t grn, uint8_t blu) {
+    auto ipart = [](float x) -> int {return int(std::floor(x));};
+    auto round = [](float x) -> float {return std::round(x);};
+    auto fpart = [](float x) -> float {return x - std::floor(x);};
+    auto rfpart = [=](float x) -> float {return 1 - fpart(x);};
+        
+    const bool steep = abs(y1 - y0) > abs(x1 - x0);
+    if (steep) {
+        std::swap(x0,y0);
+        std::swap(x1,y1);
+    }
+    if (x0 > x1) {
+        std::swap(x0,x1);
+        std::swap(y0,y1);
+    }
+        
+    const float dx = x1 - x0;
+    const float dy = y1 - y0;
+    const float gradient = (dx == 0) ? 1 : dy/dx;
+        
+    int xpx11;
+    float intery;
+    {
+        const float xend = round(x0);
+        const float yend = y0 + gradient * (xend - x0);
+        const float xgap = rfpart(x0 + 0.5);
+        xpx11 = int(xend);
+        const int ypx11 = ipart(yend);
+        if (steep) {
+            drawPixel(ypx11,     xpx11, rfpart(yend) * xgap*red, rfpart(yend) * xgap*grn,rfpart(yend) * xgap*blu);
+            drawPixel(ypx11 + 1, xpx11,  fpart(yend) * xgap*red, fpart(yend) * xgap*grn, fpart(yend) * xgap*blu);
+        } else {
+            drawPixel(xpx11, ypx11,    rfpart(yend) * xgap*red, rfpart(yend) * xgap*grn, rfpart(yend) * xgap*blu);
+            drawPixel(xpx11, ypx11 + 1, fpart(yend) * xgap*red, fpart(yend) * xgap*grn, fpart(yend) * xgap*blu);
+        }
+        intery = yend + gradient;
+    }
+    
+    int xpx12;
+    {
+        const float xend = round(x1);
+        const float yend = y1 + gradient * (xend - x1);
+        const float xgap = rfpart(x1 + 0.5);
+        xpx12 = int(xend);
+        const int ypx12 = ipart(yend);
+        if (steep) {
+            drawPixel(ypx12,     xpx12, rfpart(yend) * xgap*red, rfpart(yend) * xgap*grn,rfpart(yend) * xgap*blu);
+            drawPixel(ypx12 + 1, xpx12,  fpart(yend) * xgap*red, fpart(yend) * xgap*grn, fpart(yend) * xgap*blu);
+        } else {
+            drawPixel(xpx12, ypx12,    rfpart(yend) * xgap*red, rfpart(yend) * xgap*grn,rfpart(yend) * xgap*blu);
+            drawPixel(xpx12, ypx12 + 1, fpart(yend) * xgap*red, fpart(yend) * xgap*grn, fpart(yend) * xgap*blu);
+        }
+    }
+        
+    if (steep) {
+        for (int x = xpx11 + 1; x < xpx12; x++) {
+            drawPixel(ipart(intery),     x, rfpart(intery)*red, rfpart(intery)*grn, rfpart(intery)*blu);
+            drawPixel(ipart(intery) + 1, x,  fpart(intery)*red, fpart(intery)*grn, fpart(intery)*blu);
+            intery += gradient;
+        }
+    } else {
+        for (int x = xpx11 + 1; x < xpx12; x++) {
+            drawPixel(x, ipart(intery),     rfpart(intery)*red, rfpart(intery)*grn, rfpart(intery)*blu);
+            drawPixel(x, ipart(intery) + 1,  fpart(intery)*red, fpart(intery)*grn, fpart(intery)*blu);
+            intery += gradient;
+        }
+    }
+}
+
 void MatrixPanel::drawPixelHSV(int16_t x, int16_t y, float H, float S,float V){
     if(H>360 || H<0 || S>100 || S<0 || V>100 || V<0){
         //cout<<"The givem HSV values are not in valid range"<<endl;

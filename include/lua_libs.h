@@ -20,6 +20,7 @@ private:
     static int lua_drawPixel(lua_State *lua_state);
     static int lua_drawPixelHSV(lua_State *lua_state);
     static int lua_drawLine(lua_State *lua_state);
+    static int lua_drawLineWu(lua_State *lua_state);
     static int lua_fillQuat(lua_State *lua_state);
     static int lua_clearScreen(lua_State *lua_state);
     static int lua_setBrightness(lua_State *lua_state);
