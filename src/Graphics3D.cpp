@@ -7,6 +7,9 @@ Graphics3D::Graphics3D(MatrixPanel *matrixPanel)
 
 Graphics3D::~Graphics3D()
 {
+    free(vertices);
+    free(faces);
+    free(face_colors);
 }
 
 void rotate(const float *source_verts, float *dest_verts, int len, double rX, double rY, double rZ)

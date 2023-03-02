@@ -16,12 +16,13 @@
 //#include <BLEServer.h>
 
 #include "driver/i2c.h"
+#include "freertos/semphr.h"
 
 #include "pinmap.h"
 #include "MatrixPanel.h"
 #include "Graphics3D.h"
 #include "lua_libs.h"
-//#include "lookup.h"
+#include "lookup.h"
 
 extern "C" {
     #include "lua.h"
@@ -48,7 +49,13 @@ xQueueHandle interputQueue;
 
 TaskHandle_t lua_task_handle;
 
+SemaphoreHandle_t Mutex = NULL;
+
 int buttonCount = 0;
+
+std::vector<String> files;
+int file_count = 0;
+int current_file_idx = 0;
 
 float clamp_value(float num, float mini, float maxi){
 	return min(max(maxi,num),mini);
@@ -165,37 +172,22 @@ void scrollString(String str, int height, uint16_t bg, uint16_t fg) {
 }*/
 
 void run_lua_task(void * param) {
-    String script = *(String *)param;
+    int script_id = *(int *)param;
+    String script = files[script_id];
     String file = ("/sdcard/" + script + ".lua");
-    int error = luaL_dofile(lua_state, file.c_str());
-    if (error) {
-        switch (error)
-        {
-        case LUA_YIELD:
-            matrixPanel.print("Yield\nerror");
-            break;
-        case LUA_ERRRUN:
-            matrixPanel.print("errrun");
-            break;
-        case LUA_ERRSYNTAX:
-            matrixPanel.print("errsyntax");
-            break;
-        case LUA_ERRMEM:
-            matrixPanel.print("errmem");
-            break;
-        case LUA_ERRERR:
-            matrixPanel.print("errerr");
-            break;
-        
-        default:
-            matrixPanel.print("unknown");
-            break;
-        }
-        printf("LUA ERROR: %s\r\n", String(lua_tostring(lua_state, -1)));
-        scrollString(String(lua_tostring(lua_state, -1)),0,0x0000, 0xffff);
 
+    printf("file name: %i\r\n", (script_id));
+    fflush(stdout);
+
+    int error = luaL_dofile(lua_state, file.c_str());
+    String error_string = lua_tostring(lua_state, -1);
+
+    if (error != 0) {
+        printf("LUA ERROR: %s\r\n", error_string);
+        scrollString(error_string, 0, 0x0000, 0xffff);
         lua_pop(lua_state, 1);
     }
+
     vTaskDelete(NULL);
 }
 
@@ -257,49 +249,25 @@ void ButtonB_task(void *params)
     gpio_isr_handler_add(pin, gpio_interrupt_handler, (void *)pin);
 }*/
 
-//https://github.com/FastLED/FastLED/blob/master/src/lib8tion/trig8.h
 static int lua_sin8(lua_State *lua_state) {
-    uint8_t theta = luaL_checkinteger(lua_state, 1);
+    int theta = luaL_checkinteger(lua_state, 1)%256;
 
-    const uint8_t b_m16_interleave[] = { 0, 49, 49, 41, 90, 27, 117, 10 };
-    uint8_t offset = theta;
-
-    if ( theta & 0x40 ) {
-        offset = (uint8_t)255 - offset;
+    uint8_t y = 0;
+    if (theta < 0) {
+        y = -sine_table_8[-theta];
+    } else {
+        y = sine_table_8[theta];
     }
 
-    offset &= 0x3F; // 0..63
-
-    uint8_t secoffset  = offset & 0x0F; // 0..15
-
-    if ( theta & 0x40) {
-        ++secoffset;   
-    }
-
-    uint8_t section = offset >> 4; // 0..3
-    uint8_t s2 = section * 2;
-    const uint8_t* p = b_m16_interleave;
-    p += s2;
-    uint8_t b   =  *p;
-    ++p;
-    uint8_t m16 =  *p;
-
-    uint8_t mx = (m16 * secoffset) >> 4;
-
-    int8_t y = mx + b;
-    if ( theta & 0x80 ) {
-        y = -y;
-    }
-
-    y += 128;
     lua_pushinteger(lua_state, y);
 
-    return 0;
+    return 1;
 }
 
 //https://github.com/FastLED/FastLED/blob/master/src/lib8tion/trig8.h
 static int lua_sin16(lua_State *lua_state) {
-    uint16_t theta = luaL_checkinteger(lua_state, 1);
+    int theta = luaL_checkinteger(lua_state, 1);
+
     static const uint16_t base[] = { 0, 6393, 12539, 18204, 23170, 27245, 30273, 32137 };
     static const uint8_t slope[] = { 49, 48, 44, 38, 31, 23, 14, 4 };
 
@@ -324,12 +292,14 @@ static int lua_sin16(lua_State *lua_state) {
 
     lua_pushinteger(lua_state, y);
 
-    return 0;
+    return 1;
 }
 
 //https://github.com/espressif/esp-idf/issues/1807
 static esp_err_t i2c_master_read_slave_reg(i2c_port_t i2c_num, uint8_t i2c_addr, uint8_t i2c_reg, uint8_t* data_rd, size_t size)
 {
+    xSemaphoreTake( Mutex, portMAX_DELAY );
+
     if (size == 0) {
         return ESP_OK;
     }
@@ -350,12 +320,17 @@ static esp_err_t i2c_master_read_slave_reg(i2c_port_t i2c_num, uint8_t i2c_addr,
     i2c_master_stop(cmd);
     esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
+
+    xSemaphoreGive( Mutex );
+
     return ret;
 }
 
 //https://github.com/espressif/esp-idf/issues/1807
 static esp_err_t i2c_master_write_slave_reg(i2c_port_t i2c_num, uint8_t i2c_addr, uint8_t i2c_reg, uint8_t* data_wr, size_t size)
 {
+    xSemaphoreTake( Mutex, portMAX_DELAY );
+
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     // first, send device address (indicating write) & register to be written
@@ -367,12 +342,17 @@ static esp_err_t i2c_master_write_slave_reg(i2c_port_t i2c_num, uint8_t i2c_addr
     i2c_master_stop(cmd);
     esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
+
+    xSemaphoreGive( Mutex );
+    
     return ret;
 }
 
 //https://github.com/espressif/esp-idf/issues/1807
 static void i2c_master_init()
 {
+    Mutex = xSemaphoreCreateMutex();
+
     int i2c_master_port = I2C_NUM_0;
     i2c_config_t conf;
     conf.mode = I2C_MODE_MASTER;
@@ -384,44 +364,69 @@ static void i2c_master_init()
     i2c_param_config(i2c_master_port, &conf);
 
     i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
+
+    printf("scanning the bus...\r\n\r\n");
+    int devices_found = 0;
+    for(int address = 1; address < 127; address++) {
+        // create and execute the command link
+        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+        i2c_master_start(cmd);
+        i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_stop(cmd);
+
+        if(i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_RATE_MS) == ESP_OK) {
+            printf("-> found device with address 0x%02x\r\n", address);
+            devices_found++;
+        }
+        fflush(stdout);
+        i2c_cmd_link_delete(cmd);
+    }
+    if(devices_found == 0) printf("\r\n-> no devices found\r\n");
 }
 
 // http://ww1.microchip.com/downloads/en/DeviceDoc/MCP7940N-Battery-Backed-I2C-RTCC-with-SRAM-20005010G.pdf
-static int lua_getSeconds(lua_State *lua_state) {
-    int seconds = 0;
+int getSeconds() {
     uint8_t rx_data[2];
     uint8_t reg = 0x00;
-    ESP_ERROR_CHECK_WITHOUT_ABORT(i2c_master_read_slave_reg(I2C_NUM_0, 0x6F, reg, rx_data, 1));
-	seconds = (rx_data[0] & 0b00001111) + (((rx_data[0] >> 4) & 0b00000111)*10);
-    lua_pushinteger(lua_state, seconds);
-    return 0;
+    ESP_ERROR_CHECK(i2c_master_read_slave_reg(I2C_NUM_0, 0x6F, reg, rx_data, 1));
+    return (rx_data[0] & 0b00001111) + (((rx_data[0] >> 4) & 0b00000111)*10);
+}
+
+int getMinutes() {
+    uint8_t rx_data[2];
+    uint8_t reg = 0x01;
+    ESP_ERROR_CHECK(i2c_master_read_slave_reg(I2C_NUM_0, 0x6F, reg, rx_data, 1));
+    return (rx_data[0] & 0b00001111) + (((rx_data[0] >> 4) & 0b00000111)*10);
+}
+
+int getHours() {
+    uint8_t rx_data[2];
+    uint8_t reg = 0x02;
+    ESP_ERROR_CHECK(i2c_master_read_slave_reg(I2C_NUM_0, 0x6F, reg, rx_data, 1));
+    return (rx_data[0] & 0b00001111) + (((rx_data[0] >> 4) & 0b00000001)*10);
+}
+
+static int lua_getSeconds(lua_State *lua_state) {
+    lua_pushinteger(lua_state, getSeconds());
+    return 1;
 }
 
 static int lua_getMinutes(lua_State *lua_state) {
-    int minutes = 0;
-    uint8_t rx_data[2];
-    uint8_t reg = 0x01;
-    ESP_ERROR_CHECK_WITHOUT_ABORT(i2c_master_read_slave_reg(I2C_NUM_0, 0x6F, reg, rx_data, 1));
-	minutes = (rx_data[0] & 0b00001111) + (((rx_data[0] >> 4) & 0b00000111)*10);
-    lua_pushinteger(lua_state, minutes);
-    return 0;
+    lua_pushinteger(lua_state, getMinutes());
+    return 1;
 }
 
 static int lua_getHours(lua_State *lua_state) {
-    int hours = 0;
-    uint8_t rx_data[2];
-    uint8_t reg = 0x02;
-    ESP_ERROR_CHECK_WITHOUT_ABORT(i2c_master_read_slave_reg(I2C_NUM_0, 0x6F, reg, rx_data, 1));
-	hours = (rx_data[0] & 0b00001111) + (((rx_data[0] >> 4) & 0b00000001)*10);
-    lua_pushinteger(lua_state, hours);
+    lua_pushinteger(lua_state, getHours());
+    return 1;
+}
+
+static int lua_getRandom(lua_State *lua_state) {
+    lua_pushinteger(lua_state, esp_random());
     return 0;
 }
 
-void list_files(String *files, int *count) {
-    std::vector<String> _files; //store filenames here temporarily
-
-    int file_count = 0;
-
+void list_files() {
     // open the directory
     DIR* dir = opendir(MOUNT_POINT"/");
     struct dirent* de;
@@ -437,18 +442,17 @@ void list_files(String *files, int *count) {
         String extention = filename.substring(1 + filename.lastIndexOf("."));
         if (extention == "lua") {
             String base = filename.substring(0, filename.lastIndexOf("."));
-            _files.push_back(base); //add to the list of filenames
+            files.push_back(base); //add to the list of filenames
+            file_count++;
         }
     }
-
-    // allocate memory for string array that is given through the parameters and populate it with the names
-    files = (String *) malloc(sizeof(String *)*file_count);
-    std::copy(_files.begin(), _files.end(), files);
-    *count = file_count;
 }
 
 void setup() {
     i2c_master_init();
+
+	uint8_t data = 0x80; //=> 0 seconds bit 7 on for counting
+    ESP_ERROR_CHECK(i2c_master_write_slave_reg(I2C_NUM_0, 0x6F, 0x00, &data, 1));
 
     /*BLEDevice::init("Long name works now");
     BLEServer *pServer = BLEDevice::createServer();
@@ -467,7 +471,7 @@ void setup() {
     pAdvertising->setScanResponse(true);
     pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
     pAdvertising->setMinPreferred(0x12);
-    BLEDevice::startAdvertising();*/
+    BLEDevice::startAdvertising();//*/
 
     init_fat();
     
@@ -487,14 +491,13 @@ void setup() {
     lua_register(lua_state, "getMinutes", (const lua_CFunction) &lua_getMinutes);
     lua_register(lua_state, "getHours", (const lua_CFunction) &lua_getHours);
     lua_register(lua_state, "delay", (const lua_CFunction) &lua_delay);
+    lua_register(lua_state, "random", (const lua_CFunction) &lua_getRandom);
 
-    // get lua scripts and put them in a string array
-    String *files;
-    int file_count;
-    list_files(files, &file_count);
-    for (int i=0; i<file_count; i++) {
+    list_files();
+    /*for (int i=0; i<file_count; i++) {
         printf("found file: %s.lua\r\n", files[i]);
-    }
+        fflush(stdout);
+    }*/
 
     //buttonCount = 0;
     //gpio_install_isr_service(0);
@@ -503,14 +506,13 @@ void setup() {
     //setup_interrupt_ISR((gpio_num_t)BUTTON_C, "ButtonC_task", ButtonC_task);
 
     // create task where the lua script runs in
-    xTaskCreate(&run_lua_task,"lua task", 4096*8, &files[0], 0, &lua_task_handle);
+    current_file_idx = 0;
+    xTaskCreate(&run_lua_task,"lua task", 4096*8, &current_file_idx, 0, &lua_task_handle);
 
-    /*delay(5000);
-    vTaskDelete(lua_task_handle);
-
-    xTaskCreate(&run_lua_task,"lua task", 4096*8, &files[1], 0, &lua_task_handle);
-    delay(5000);
-    vTaskDelete(lua_task_handle);*/
+    /*int error = luaL_dofile(lua_state, "/sdcard/clock.lua");
+    if (error) {
+        printf("LUA ERROR: %s\r\n", lua_tostring(lua_state, -1));
+    }//*/
 }
 
 void loop() {
