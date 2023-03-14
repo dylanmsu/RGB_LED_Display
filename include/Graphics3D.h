@@ -1,3 +1,6 @@
+#ifndef GRAPHICS_3D_H
+#define GRAPHICS_3D_H
+
 #include "MatrixPanel.h"
 #include "FastMath.h"
 
@@ -6,9 +9,6 @@ extern "C" {
     #include "lualib.h"
     #include "lauxlib.h"
 }
-
-#ifndef GRAPHICS_3D
-#define GRAPHICS_3D
 
 #define VERTS_PER_FACE 4
 
@@ -48,4 +48,4 @@ public:
     void drawMesh();
 };
 
-#endif
+#endif  // GRAPHICS_3D_H

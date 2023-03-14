@@ -1,3 +1,6 @@
+#ifndef MATRIX_LIBS_H
+#define MATRIX_LIBS_H
+
 #include "MatrixPanel.h"
 #include "Graphics3D.h"
 
@@ -6,9 +9,6 @@ extern "C" {
     #include "lualib.h"
     #include "lauxlib.h"
 }
-
-#ifndef MATRIX_LIBS_H
-#define MATRIX_LIBS_H
 
 class Lua_libs
 {

@@ -1,5 +1,4 @@
-#ifndef LOOKUP_H
-#define LOOKUP_H
+#include "FastMath.h"
 
 uint8_t sine_table_8[256] = {
   0x80, 0x83, 0x86, 0x89, 0x8C, 0x90, 0x93, 0x96,
@@ -36,4 +35,35 @@ uint8_t sine_table_8[256] = {
   0x67, 0x6A, 0x6D, 0x70, 0x74, 0x77, 0x7A, 0x7D
 };
 
-#endif // LOOKUP_H
+uint8_t fast_sin8(uint8_t theta) {
+    uint8_t y = 0;
+    if (theta < 0) {
+        return -sine_table_8[-theta];
+    } else {
+        return sine_table_8[theta];
+    }
+}
+
+// https://www.geeksforgeeks.org/fast-inverse-square-root/
+// function to find the inverse square root
+float inverse_rsqrt( float number ) {
+    const float threehalfs = 1.5f;
+    
+    float x2 = number * 0.5f;
+    float y = number;
+    
+    // evil floating point bit level hacking
+    long i = * ( long * ) &y;
+    
+    // value is pre-assumed
+    i = 0x5f3759df - ( i >> 1 );
+    y = * ( float * ) &i;
+    
+    // 1st iteration
+    y = y * ( threehalfs - ( x2 * y * y ) );
+    
+    // 2nd iteration, this can be removed
+    y = y * ( threehalfs - ( x2 * y * y ) );
+    
+    return y;
+}
