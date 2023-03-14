@@ -24,7 +24,7 @@ angle4 = 0.0
 
 hueShift = 0
 
-while (true) do
+function run()
     sx1 = math.cos(angle1) * radius1 + centerx1;
     sx2 = math.cos(angle2) * radius2 + centerx2;
     sx3 = math.cos(angle3) * radius3 + centerx3;
@@ -57,7 +57,7 @@ while (true) do
         y4 = y4 - 1
     end
 
-    updateDisplay()
+    matrix.draw()
 
     mult = 0.001
     angle1 = angle1 + 3*mult;
@@ -66,3 +66,5 @@ while (true) do
     angle4 = angle4 + 15*mult;
     hueShift = hueShift + 200*mult;
 end
+
+setInterval(10)

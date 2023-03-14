@@ -42,13 +42,13 @@ function draw()
     matrix.drawPixel(math.ceil(cx), math.ceil(cy), 64, 64, 64)
 end
 
--- poll second counter every 50ms 
-while (true) do
+function run()
     seconds = getSeconds()
     if (prev_seconds ~= seconds) then
         prev_seconds = seconds
         draw()
-        updateDisplay()
     end
-    delay(50)
+    matrix.draw()
 end
+
+setInterval(50)

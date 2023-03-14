@@ -1,5 +1,5 @@
 #include "MatrixPanel.h"
-#include <vector>
+#include "FastMath.h"
 
 extern "C" {
     #include "lua.h"
@@ -10,6 +10,8 @@ extern "C" {
 #ifndef GRAPHICS_3D
 #define GRAPHICS_3D
 
+#define VERTS_PER_FACE 4
+
 class Graphics3D
 {
 private:
@@ -18,6 +20,7 @@ private:
     float *vertices;
     int *faces;
     float *face_colors;
+    float *face_normals;
 
     int face_count;
     int vert_count;
@@ -25,12 +28,18 @@ private:
     bool enable_specular = false;
     bool enable_diffuse = true;
 
-    double rotation[3] = {0.0, 0.0, 0.0};
-
+    // parapeters that may change later
+    float rotation[3] = {0.0, 0.0, 0.0};
+    float cameraPos[3] = {0.0, 4.0, 0.0};
+    float lightColor[3] = {1.0, 1.0, 1.0};
+    float lightPos[3] = {-5.0, 5.0, 5.0};
+    float lightPower = 100;
 
 public:
     Graphics3D(MatrixPanel *matrixPanel);
     ~Graphics3D();
+
+    void calculate_normals();
 
     void drawSolid(float *verts, int *faces, float *colors, int facelen, double zoom);
     void pushVertex(float x, float y, float z);

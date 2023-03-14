@@ -1,4 +1,4 @@
-#include "lua_libs.h"
+#include "Lua_libs.h"
 
 Lua_libs::Lua_libs(lua_State *lua, MatrixPanel *matrix, Graphics3D *graphics3d)
 {
@@ -27,7 +27,8 @@ const luaL_Reg Lua_libs::matrixfunctions[] = {
     {"push3dVertex", lua_push3dVertex},
     {"push3dQuat", lua_push3dQuat},
     {"set3dRotation", lua_set3dRotation},
-    {"draw3dsolid", lua_draw3dsolid}, 
+    {"draw3dsolid", lua_draw3dsolid},
+    {"draw", lua_updateScreen},
     {NULL, NULL}
 };
 
@@ -92,8 +93,9 @@ int Lua_libs::lua_fillQuat(lua_State *lua_state) {
     int red = luaL_checkinteger(lua_state, 9);
     int grn = luaL_checkinteger(lua_state, 10);
     int blu = luaL_checkinteger(lua_state, 11);
+    float alpha = luaL_checknumber(lua_state, 12);
     
-    _matrix->fillQuat((float *)px, (float *)py, red, grn, blu);
+    _matrix->fillQuat((float *)px, (float *)py, red, grn, blu, alpha);
     return 0;
 }
 
@@ -118,7 +120,6 @@ int Lua_libs::lua_push3dVertex(lua_State *lua_state) {
 }
 
 int Lua_libs::lua_push3dQuat(lua_State *lua_state) {
-    printf("hello11\r\n");
     fflush(stdout);
     int p1 = luaL_checkinteger(lua_state, 1);
     int p2 = luaL_checkinteger(lua_state, 2);
@@ -141,7 +142,6 @@ int Lua_libs::lua_set3dRotation(lua_State *lua_state) {
 }
 
 int Lua_libs::lua_draw3dsolid(lua_State *lua_state) {
-    printf("hello2\r\n");
     _graphics3d->drawMesh();
     return 0;
 }
@@ -157,7 +157,16 @@ int Lua_libs::lua_drawCircle(lua_State *lua_state) {
     _matrix->fillCircle(x, y, r, color);
 }
 
+int Lua_libs::lua_updateScreen(lua_State *lua_state) {
+    _matrix->drawBuffer();
+    return 1;
+}
+
 int Lua_libs::luaopen_matrix_lib(lua_State *L) {
     luaL_newlib(L, matrixfunctions);
+    lua_pushnumber(L, _matrix->getWidth());
+    lua_setfield(L, -2, "matrix.width");
+    lua_pushnumber(L, _matrix->getHeight());
+    lua_setfield(L, -2, "matrix.height");
     return 1;
 }

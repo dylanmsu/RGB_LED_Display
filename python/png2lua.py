@@ -2,7 +2,7 @@ from PIL import Image
 from numpy import asarray
 from pathlib import Path
 
-image = Image.open('./python/img/minecraft/textures/block/nether_portal.png')
+image = Image.open('./python/textures/block/nether_portal.png')
 data = asarray(image)
 name = Path(image.filename).stem
 
@@ -37,5 +37,5 @@ for idx, r in enumerate(data):
         row += "\tend\n"
         row += "end\n"
         
-with open('./python/generated_scripts/' + str(name) + '.lua', 'w') as f:
+with open('./lua_scripts/' + str(name) + '.lua', 'w') as f:
     f.write(row)

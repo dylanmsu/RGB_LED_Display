@@ -1,4 +1,4 @@
-matrix.setBrightness(4)
+matrix.setBrightness(255)
 
 --vertices (x, y, z)
 matrix.push3dVertex(-1,-1,-1) --0           1---------5         ^ +z
@@ -19,11 +19,12 @@ matrix.push3dQuat(3,2,6,7, 128, 255, 255)
 matrix.push3dQuat(5,4,0,1, 255, 128, 255)
 
 i = 0.0
-while (true) do
+function run()
     matrix.set3dRotation(i/2, i/3, i/5)
     matrix.draw3dsolid()
-    updateDisplay()
-    delay(10)
+    matrix.draw()
     i = i + 0.1
     matrix.clearScreen()
 end
+
+setInterval(10)

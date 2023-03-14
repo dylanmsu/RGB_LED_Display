@@ -5,6 +5,7 @@ MatrixPanel::MatrixPanel(int width, int height)
     , _width(width)
     , _height(height)
 {
+    // buffer for the pixels to support opacity
     pixel_buffer = (uint8_t *) calloc(width*height*3, sizeof(uint8_t));
 
     HUB75_I2S_CFG::i2s_pins _pins = {
@@ -20,7 +21,7 @@ MatrixPanel::MatrixPanel(int width, int height)
 
     dma_display = new MatrixPanel_I2S_DMA(mxconfig);
     dma_display->begin();
-    dma_display->setBrightness8(4);
+    dma_display->setBrightness8(4); //can be changed later by the lua script
     fillScreen(0x0000);
 
     //OneEightMatrixDisplay = new VirtualMatrixPanel((*dma_display), 1, 1, _width, _height, true, false);
@@ -29,10 +30,11 @@ MatrixPanel::MatrixPanel(int width, int height)
 }
 
 MatrixPanel::~MatrixPanel() {
-    
+    free(pixel_buffer);
 }
 
-//the used panel has a weird scanning order so we remap the pixels to have a continuous canvas
+//the used panel has a scanning order not implemented in the hub75 library, 
+//so we remap the pixels to have a continuous canvas
 int MatrixPanel::pixel_mapper(int in_x, int in_y, int *out_x, int *out_y) {
     if (in_x < 0 || in_x > 31) {
         return 1;
@@ -79,15 +81,19 @@ void MatrixPanel::drawPixel(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint
 
 void MatrixPanel::drawPixelRGBA(int16_t x, int16_t y, uint8_t red, uint8_t grn, uint8_t blu, float alpha) {
     auto min = [](float a, float b) -> int {if (a>b) return b; else return a;};
+    auto max = [](float a, float b) -> int {if (a<b) return b; else return a;};
 
     int i,j = 0;
     int err = pixel_mapper(x, y, &i, &j);
     if (!err) {
+        // clamp alpha between 0 and 1
+        alpha = min(max(alpha, 0.0f), 1.0f);
+
         int idx = i + _width*2*j;
-        pixel_buffer[idx*3 + 0] = (pixel_buffer[idx*3 + 0]*(1.0f - alpha)) + floor(min(red*alpha, 255));
-        pixel_buffer[idx*3 + 1] = (pixel_buffer[idx*3 + 1]*(1.0f - alpha)) + floor(min(grn*alpha, 255));
-        pixel_buffer[idx*3 + 2] = (pixel_buffer[idx*3 + 2]*(1.0f - alpha)) + floor(min(blu*alpha, 255));
-        //dma_display->drawPixelRGB888(i, j, red*alpha, grn*alpha, blu*alpha);
+        // [new pixel] = [bottom pixel]*(1-alpha) + [top pixel]*alpha
+        pixel_buffer[idx*3 + 0] = floor(pixel_buffer[idx*3 + 0]*(1.0f - alpha) + red*alpha);
+        pixel_buffer[idx*3 + 1] = floor(pixel_buffer[idx*3 + 1]*(1.0f - alpha) + grn*alpha);
+        pixel_buffer[idx*3 + 2] = floor(pixel_buffer[idx*3 + 2]*(1.0f - alpha) + blu*alpha);
     } else {
         // pixel is outside of range
     }
@@ -101,7 +107,7 @@ void MatrixPanel::drawBuffer() {
         uint8_t r = pixel_buffer[idx*3 + 0];
         uint8_t g = pixel_buffer[idx*3 + 1];
         uint8_t b = pixel_buffer[idx*3 + 2];
-        //dma_display->updateMatrixDMABuffer( x, y, r, g, b);
+
         dma_display->drawPixelRGB888(x, y, r, g, b);
     }
 }
@@ -118,11 +124,6 @@ void MatrixPanel::fillScreen(uint16_t color) {
         pixel_buffer[idx*3 + 1] = ((((color >> 5) & 0x3F) * 259) + 33) >> 6;
         pixel_buffer[idx*3 + 2] = (((color & 0x1F) * 527) + 23) >> 6;
     }
-    //if (color != 0x0000) {
-    //    dma_display->fillScreen(color);
-    //} else {
-    //    dma_display->clearScreen();
-    //}
 }
 
 void MatrixPanel::drawPixel(int16_t x, int16_t y, uint16_t color) {
@@ -160,6 +161,7 @@ void MatrixPanel::drawLineWu(float x0, float y0, float x1, float y1, uint8_t red
     auto rfpart = [=](float x) -> float {return 1 - fpart(x);};
         
     const bool steep = abs(y1 - y0) > abs(x1 - x0);
+
     if (steep) {
         std::swap(x0,y0);
         std::swap(x1,y1);
@@ -182,13 +184,9 @@ void MatrixPanel::drawLineWu(float x0, float y0, float x1, float y1, uint8_t red
         xpx11 = int(xend);
         const int ypx11 = ipart(yend);
         if (steep) {
-            //drawPixel(ypx11,     xpx11, rfpart(yend) * xgap*red, rfpart(yend) * xgap*grn, rfpart(yend) * xgap*blu);
-            //drawPixel(ypx11 + 1, xpx11,  fpart(yend) * xgap*red, fpart(yend) * xgap*grn, fpart(yend) * xgap*blu);
             drawPixelRGBA(ypx11,     xpx11, red, grn, blu, rfpart(yend) * xgap);
             drawPixelRGBA(ypx11 + 1, xpx11, red, grn, blu,  fpart(yend) * xgap);
         } else {
-            //drawPixel(xpx11, ypx11,    rfpart(yend) * xgap*red, rfpart(yend) * xgap*grn, rfpart(yend) * xgap*blu);
-            //drawPixel(xpx11, ypx11 + 1, fpart(yend) * xgap*red, fpart(yend) * xgap*grn, fpart(yend) * xgap*blu);
             drawPixelRGBA(xpx11, ypx11,     red, grn, blu, rfpart(yend) * xgap);
             drawPixelRGBA(xpx11, ypx11 + 1, red, grn, blu,  fpart(yend) * xgap);
         }
@@ -203,13 +201,9 @@ void MatrixPanel::drawLineWu(float x0, float y0, float x1, float y1, uint8_t red
         xpx12 = int(xend);
         const int ypx12 = ipart(yend);
         if (steep) {
-            //drawPixel(ypx12,     xpx12, rfpart(yend) * xgap*red, rfpart(yend) * xgap*grn, rfpart(yend) * xgap*blu);
-            //drawPixel(ypx12 + 1, xpx12,  fpart(yend) * xgap*red, fpart(yend) * xgap*grn, fpart(yend) * xgap*blu);
             drawPixelRGBA(ypx12,     xpx12, red, grn, blu, rfpart(yend) * xgap);
             drawPixelRGBA(ypx12 + 1, xpx12, red, grn, blu, fpart(yend) * xgap);
         } else {
-            //drawPixel(xpx12, ypx12,    rfpart(yend) * xgap*red, rfpart(yend) * xgap*grn, rfpart(yend) * xgap*blu);
-            //drawPixel(xpx12, ypx12 + 1, fpart(yend) * xgap*red, fpart(yend) * xgap*grn, fpart(yend) * xgap*blu);
             drawPixelRGBA(xpx12, ypx12,    red, grn, blu, rfpart(yend) * xgap);
             drawPixelRGBA(xpx12, ypx12 + 1,red, grn, blu, fpart(yend) * xgap);
         }
@@ -217,16 +211,12 @@ void MatrixPanel::drawLineWu(float x0, float y0, float x1, float y1, uint8_t red
         
     if (steep) {
         for (int x = xpx11 + 1; x < xpx12; x++) {
-            //drawPixel(ipart(intery),     x, rfpart(intery)*red, rfpart(intery)*grn, rfpart(intery)*blu);
-            //drawPixel(ipart(intery) + 1, x,  fpart(intery)*red, fpart(intery)*grn, fpart(intery)*blu);
             drawPixelRGBA(ipart(intery),     x, red, grn, blu, rfpart(intery));
             drawPixelRGBA(ipart(intery) + 1, x, red, grn, blu, fpart(intery));
             intery += gradient;
         }
     } else {
         for (int x = xpx11 + 1; x < xpx12; x++) {
-            //drawPixel(x, ipart(intery),     rfpart(intery)*red, rfpart(intery)*grn, rfpart(intery)*blu);
-            //drawPixel(x, ipart(intery) + 1,  fpart(intery)*red, fpart(intery)*grn, fpart(intery)*blu);
             drawPixelRGBA(x, ipart(intery),     red, grn, blu, rfpart(intery));
             drawPixelRGBA(x, ipart(intery) + 1, red, grn, blu, fpart(intery));
             intery += gradient;
@@ -270,7 +260,7 @@ void MatrixPanel::drawPixelHSV(int16_t x, int16_t y, float H, float S,float V){
     drawPixel(x, y, R, G, B);
 }
 
-void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8_t b){
+void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8_t b, float alpha){
 	int IMG_TOP = min(min(min(py[0],py[1]),py[2]),py[3]);
 	int IMG_BOT = max(max(max(py[0],py[1]),py[2]),py[3])+1;
 	int IMG_LEF = min(min(min(px[0],px[1]),px[2]),px[3]);
@@ -311,7 +301,7 @@ void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8
 				if (nodeXi<IMG_LEF) nodeXi=IMG_LEF;
 				if (nodeXii>IMG_RIG) nodeXii = IMG_RIG;
 				for (int pixelX=nodeXi;pixelX<nodeXii;pixelX++){
-					drawPixel(pixelX, pixelY, r, g, b);
+					drawPixelRGBA(pixelX, pixelY, r, g, b, alpha);
 				}
 			}
 		}

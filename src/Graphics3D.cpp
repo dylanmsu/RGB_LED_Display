@@ -12,40 +12,50 @@ Graphics3D::~Graphics3D()
     free(face_colors);
 }
 
-void rotate(const float *source_verts, float *dest_verts, int len, double rX, double rY, double rZ)
-{
-    float cosa = cos(rZ);
-    float sina = sin(rZ);
-
-    float cosb = cos(rY);
-    float sinb = sin(rY);
-
-    float cosc = cos(rX);
-    float sinc = sin(rX);
-
-    float Axx = cosa*cosb;
-    float Axy = cosa*sinb*sinc - sina*cosc;
-    float Axz = cosa*sinb*cosc + sina*sinc;
-
-    float Ayx = sina*cosb;
-    float Ayy = sina*sinb*sinc + cosa*cosc;
-    float Ayz = sina*sinb*cosc - cosa*sinc;
-
-    float Azx = -sinb;
-    float Azy = cosb*sinc;
-    float Azz = cosb*cosc;
-
-    // apply matrix transformation to every vertex
+void apply_matrix(const float *source_verts, float *dest_verts, const float *matrix, int len) {
+    // for every vertex
     for (int i=0;i<len*3;i+=3)
     {
         float px = source_verts[i+0];
         float py = source_verts[i+1];
         float pz = source_verts[i+2];
 
-        dest_verts[i+0] = Axx*px + Axy*py + Axz*pz;
-        dest_verts[i+1] = Ayx*px + Ayy*py + Ayz*pz;
-        dest_verts[i+2] = Azx*px + Azy*py + Azz*pz;
+        dest_verts[i+0] = matrix[0]*px + matrix[1]*py + matrix[2]*pz;
+        dest_verts[i+1] = matrix[3]*px + matrix[4]*py + matrix[5]*pz;
+        dest_verts[i+2] = matrix[6]*px + matrix[7]*py + matrix[8]*pz;
     }
+}
+
+void rotate(const float *source_verts, float *dest_verts, int len, double rX, double rY, double rZ)
+{
+    float cosz = cos(rZ);
+    float sinz = sin(rZ);
+
+    float cosy = cos(rY);
+    float siny = sin(rY);
+
+    float cosx = cos(rX);
+    float sinx = sin(rX);
+
+    float Axx = cosz*cosy;
+    float Axy = cosz*siny*sinx - sinz*cosx;
+    float Axz = cosz*siny*cosx + sinz*sinx;
+
+    float Ayx = sinz*cosy;
+    float Ayy = sinz*siny*sinx + cosz*cosx;
+    float Ayz = sinz*siny*cosx - cosz*sinx;
+
+    float Azx = -siny;
+    float Azy = cosy*sinx;
+    float Azz = cosy*cosx;
+
+    float matrix[9] = {
+        Axx, Axy, Axz, 
+        Ayx, Ayy, Ayz, 
+        Azx, Azy, Azz
+    };
+
+    apply_matrix(source_verts, dest_verts, matrix, len);
 }
 
 //sorts an array and returns an array of the indices
@@ -70,10 +80,12 @@ void sort(float *arr,const int n, int *idx){
 float clamp(float num, float mini, float maxi){
 	return min(max(maxi,num),mini);
 }
+
 float max(float a, float b){
 	if (a<b)return b;
 	else return a;
 }
+
 float min(float a, float b){
 	if (a>b)return b;
 	else return a;
@@ -83,17 +95,18 @@ float min(float a, float b){
 void Zarr(float *verts, int *faces, int len, float *arr){
 	for (int i=0;i<len;i++){
 		float c = 0;
-		for (int j=0;j<4;j++){
-			c += verts[faces[i*4+j]*3+1];
+		for (int j=0;j<VERTS_PER_FACE;j++){
+			c += verts[faces[i*VERTS_PER_FACE+j]*3+1];
 		}
-		c /= 4;
+		c /= VERTS_PER_FACE;
 		arr[i] = c;
 	}
 }
 
 //devides the vector by its length
 void normalize(float *vec){
-	float inv_mag = 1.0 / sqrt(vec[0]*vec[0]+vec[1]*vec[1]+vec[2]*vec[2]);
+    float inv_mag = inverse_rsqrt(vec[0]*vec[0]+vec[1]*vec[1]+vec[2]*vec[2]);
+	//float inv_mag = 1.0 / sqrt(vec[0]*vec[0]+vec[1]*vec[1]+vec[2]*vec[2]);
 	vec[0] *= inv_mag;
 	vec[1] *= inv_mag;
 	vec[2] *= inv_mag;
@@ -107,7 +120,7 @@ void cross(const float *a, const float *b, float *out){
 }
 
 //gets the normal vector of a face
-void getNormal(const float *verts, const int *faces, const int len, const int index, float *out){
+void getFaceNormal(const float *verts, const int *faces, const int index, float *out){
 	float edgeA[3] = {0,0,0};
 	float edgeB[3] = {0,0,0};
 	for (int i=0;i<3;i++){ 
@@ -126,92 +139,88 @@ float dot(const float *a, const float *b){
 //gets the reflected vector
 //https://www.opengl.org/discussion_boards/showthread.php/155886-Reflection-vector
 void reflect(float d[3], float n[3], float reflected[3]){
-        float dot_d_n = dot(d,n);
-        reflected[0] = 2*dot_d_n*n[0]-d[0];
-        reflected[1] = 2*dot_d_n*n[1]-d[1];
-        reflected[2] = 2*dot_d_n*n[2]-d[2];
+        float dot_d_n_2 = dot(d,n)*2;
+        reflected[0] = dot_d_n_2*n[0]-d[0];
+        reflected[1] = dot_d_n_2*n[1]-d[1];
+        reflected[2] = dot_d_n_2*n[2]-d[2];
 }
 
-float pyth(float vec1[3], float vec2[3]){
+float dist_squared(float vec1[3], float vec2[3]){
     float x = vec1[0]-vec2[0];
     float y = vec1[1]-vec2[1];
     float z = vec1[2]-vec2[2];
     return x*x+y*y+z*z;
 }
 
-void faceCenter(float *verts, int *faces, int k, float center[3]){
-    for(int i=0; i<4; i++){
-        int vert = faces[k*4 + i];
+void face_center(float *verts, int *faces, int k, float center[3]){
+    for(int i=0; i<VERTS_PER_FACE; i++){
+        int vert = faces[k*VERTS_PER_FACE + i];
         center[0] += verts[vert*3 + 0];
         center[1] += verts[vert*3 + 1];
         center[2] += verts[vert*3 + 2];
     }
-    center[0] /= 4;
-    center[1] /= 4;
-    center[2] /= 4;
+    center[0] /= VERTS_PER_FACE;
+    center[1] /= VERTS_PER_FACE;
+    center[2] /= VERTS_PER_FACE;
+}
+
+void Graphics3D::calculate_normals() {
+    face_normals = (float *) realloc(face_normals, sizeof(float *)*(face_count)*3);
+    for (int i=0; i<face_count; i++) {
+        float faceNormal[3] = {0};
+        
+        getFaceNormal(vertices, faces, i, faceNormal);
+
+        face_normals[i*3 + 0] = faceNormal[0];
+        face_normals[i*3 + 1] = faceNormal[1];
+        face_normals[i*3 + 2] = faceNormal[2];
+    }
 }
 
 //void drawSolid(double *verts, int *faces, int facelen, float r, float g, float b, uint8_t **buffer){
 void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen, double zoom){
-    const int verts_per_face = 4;
 	const int cx = matrixPanel->getWidth()/2;
     const int cy = matrixPanel->getHeight()/2;
     
     int buf[facelen] = {0};
     float Zarray[facelen] = {0};
     
+    // calculate z-buffer on every frame
     Zarr(verts,faces,facelen,Zarray); //gets array of all the z positions of the faces and dump them in "Zarray"
 	sort(Zarray,facelen,buf);        //get sorted indices of the z array to apply the "painter’s algorithm"
-    
-    float cameraPos[3] = {0, 4, 0};    //position of the camera
 
-    float x[verts_per_face] = {0};
-    float y = 0;
-    float z[verts_per_face] = {0};
-
-    float px[verts_per_face] = {0};
-    float py[verts_per_face] = {0};
-
-    
-
-    // color of the licht source
-    float lightColor[3] = {1,1,1};//white
-
-    // intensity of the light source
-    float lightPower = 100;
-
-    // position of the light source
-    float sun[3] = {-5,5,5};
+    // used to store the 2d projected 3d coordinates
+    float px[VERTS_PER_FACE] = {0};
+    float py[VERTS_PER_FACE] = {0};
 
     // shininess of the specular highlights (if enabled)
-    float shininess = 10;
+    float shininess = 10.0f;
 
     // color of the specular highlights (if enabled)
-    float specularColor[3] = {1,1,1};//white
+    float specularColor[3] = {1.0f, 1.0f, 1.0f}; //white
 
     float camNormal[3] = {cameraPos[0], cameraPos[1], cameraPos[2]};
     normalize(camNormal);
 
-    float sunNormal[3] = {sun[0], sun[1], sun[2]};
+    float sunNormal[3] = {lightPos[0], lightPos[1], lightPos[2]};
     if (enable_diffuse || enable_specular) {
         normalize(sunNormal);
     }
 
+    // iterate over every face
     for (int j=0;j<facelen;j++){
 		
 		int i = buf[j];
 
         // here is where the 3d coordinates are mapped onto a 2d xz surface
-        for (int k=0; k<verts_per_face; k++) {
-            x[k] =  verts[faces[i*verts_per_face+k]*3+0]+cameraPos[0];
-            y =     verts[faces[i*verts_per_face+k]*3+1]+cameraPos[1];
-            z[k] =  verts[faces[i*verts_per_face+k]*3+2]+cameraPos[2];
-
-            x[k] *= zoom/y;
-            z[k] *= zoom/y;
-
-            px[k] = cx+x[k];
-            py[k] = cy+z[k];
+        for (int k=0; k<VERTS_PER_FACE; k++) {
+            float x = verts[faces[i*VERTS_PER_FACE+k]*3+0]+cameraPos[0];
+            float y = verts[faces[i*VERTS_PER_FACE+k]*3+1]+cameraPos[1];
+            float z = verts[faces[i*VERTS_PER_FACE+k]*3+2]+cameraPos[2];
+            x *= zoom/y;
+            z *= zoom/y;
+            px[k] = cx+x;
+            py[k] = cy+z;
         }
 
         // the following code are for the shaders
@@ -223,9 +232,10 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
         // color of the ambient licht
         float ambientColor[3] = {colors[i*3 + 0]/10, colors[i*3 + 1]/10, colors[i*3 + 2]/10};
 
-        // calculate the face normal and the normal pointing to the camera 
         float faceNormal[3] = {0};
-        getNormal(verts, faces, facelen, i, faceNormal);
+        faceNormal[0] = face_normals[i*3 + 0];
+        faceNormal[1] = face_normals[i*3 + 1];
+        faceNormal[2] = face_normals[i*3 + 2];
 
         //some crude optimization: if the face faces away from the camera, don't draw it.
         if (dot(camNormal, faceNormal) > 0.0) {
@@ -235,8 +245,8 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
             float dist_sq = 1;
             if (enable_diffuse || enable_specular) {
                 float centerFace[3] = {0};
-                faceCenter(verts, faces, i, centerFace);
-                dist_sq = pyth(sun, centerFace);
+                face_center(verts, faces, i, centerFace);
+                dist_sq = dist_squared(lightPos, centerFace);
             }
 
             // diffuse
@@ -271,7 +281,7 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
                 color[c] = clamp(ambient_component + diffuse_component + specular_component, 1, 0);
             }
 
-            matrixPanel->fillQuat(px, py, color[0]*255, color[1]*255, color[2]*255);
+            matrixPanel->fillQuat(px, py, color[0]*255, color[1]*255, color[2]*255, 1);
         }
     }
 }
@@ -286,16 +296,13 @@ void Graphics3D::pushVertex(float x, float y, float z) {
 
 void Graphics3D::pushQuat(int p1, int p2, int p3, int p4, uint8_t r, uint8_t g, uint8_t b) {
     /* Reallocating memory */
-    faces = (int *) realloc(faces, sizeof(int *)*(face_count + 1)*4);
+    faces = (int *) realloc(faces, sizeof(int *)*(face_count + 1)*VERTS_PER_FACE);
     face_colors = (float *) realloc(face_colors, sizeof(float *)*(face_count + 1)*3);
 
-    printf("faces: %i\r\n", face_count);
-    fflush(stdout);
-
-    faces[face_count*4 + 0] = p1;
-    faces[face_count*4 + 1] = p2;
-    faces[face_count*4 + 2] = p3;
-    faces[face_count*4 + 3] = p4;
+    faces[face_count*VERTS_PER_FACE + 0] = p1;
+    faces[face_count*VERTS_PER_FACE + 1] = p2;
+    faces[face_count*VERTS_PER_FACE + 2] = p3;
+    faces[face_count*VERTS_PER_FACE + 3] = p4;
 
     face_colors[face_count*3 + 0] = clamp(r/255.0,1,0);
     face_colors[face_count*3 + 1] = clamp(g/255.0,1,0);
