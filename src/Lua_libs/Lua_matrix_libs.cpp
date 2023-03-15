@@ -153,51 +153,27 @@ int Lua_matrix_libs::lua_draw3dsolid(lua_State *lua_state) {
 }
 
 int Lua_matrix_libs::lua_drawCircle(lua_State *lua_state) {
-    int xc = luaL_checkinteger(lua_state, 1);
-    int yc = luaL_checkinteger(lua_state, 2);
-    int r = luaL_checkinteger(lua_state, 3);
-    uint8_t red = luaL_checkinteger(lua_state, 4);
-    uint8_t green = luaL_checkinteger(lua_state, 5);
-    uint8_t blue = luaL_checkinteger(lua_state, 6);
+    float x = luaL_checknumber(lua_state, 1);
+    float y = luaL_checknumber(lua_state, 2);
+    float rad = luaL_checknumber(lua_state, 3);
+    float rot = luaL_checknumber(lua_state, 4);
+    uint8_t red = luaL_checkinteger(lua_state, 5);
+    uint8_t green = luaL_checkinteger(lua_state, 6);
+    uint8_t blue = luaL_checkinteger(lua_state, 7);
+    int circle_points = 10;
 
-    int x = 0, y = r;
-    int d = 3 - 2 * r;
-    _matrix->drawPixel(xc+x, yc+y, red, green, blue);
-    _matrix->drawPixel(xc-x, yc+y, red, green, blue);
-    _matrix->drawPixel(xc+x, yc-y, red, green, blue);
-    _matrix->drawPixel(xc-x, yc-y, red, green, blue);
-    _matrix->drawPixel(xc+y, yc+x, red, green, blue);
-    _matrix->drawPixel(xc-y, yc+x, red, green, blue);
-    _matrix->drawPixel(xc+y, yc-x, red, green, blue);
-    _matrix->drawPixel(xc-y, yc-x, red, green, blue);
-    while (y >= x)
-    {
-        // for each pixel we will
-        // draw all eight pixels
-         
-        x++;
- 
-        // check for decision parameter
-        // and correspondingly
-        // update d, x, y
-        if (d > 0)
-        {
-            y--;
-            d = d + 4 * (x - y) + 10;
-        }
-        else
-        {
-            d = d + 4 * x + 6;
-        }
-        _matrix->drawPixel(xc+x, yc+y, red, green, blue);
-        _matrix->drawPixel(xc-x, yc+y, red, green, blue);
-        _matrix->drawPixel(xc+x, yc-y, red, green, blue);
-        _matrix->drawPixel(xc-x, yc-y, red, green, blue);
-        _matrix->drawPixel(xc+y, yc+x, red, green, blue);
-        _matrix->drawPixel(xc-y, yc+x, red, green, blue);
-        _matrix->drawPixel(xc+y, yc-x, red, green, blue);
-        _matrix->drawPixel(xc-y, yc-x, red, green, blue);
+    //_matrix->drawLineWu(x, y, rad, rad, red, green, blue);
+
+    float prevX = 0;
+    float prevY = 0;
+    for (int i=0; i<circle_points+1; i++) {
+        float xr = rad*cos(((2*3.1415)/circle_points)*i + rot);
+        float yr = rad*sin(((2*3.1415)/circle_points)*i + rot);
+        _matrix->drawLineWu(x + prevX, y + prevY, x + xr, y + yr, red, green, blue);
+        prevX = xr;
+        prevY = yr;
     }
+
     return 1;
 }
 

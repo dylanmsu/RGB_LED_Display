@@ -182,31 +182,6 @@ int Lua_box2d_libs::lua_step(lua_State *lua_state) {
     return 1;
 }
 
-int Lua_box2d_libs::lua_drawCircle(lua_State *lua_state) {
-    float x = luaL_checknumber(lua_state, 1);
-    float y = luaL_checknumber(lua_state, 2);
-    float rad = luaL_checknumber(lua_state, 3);
-    float rot = luaL_checknumber(lua_state, 4);
-    uint8_t red = luaL_checkinteger(lua_state, 5);
-    uint8_t green = luaL_checkinteger(lua_state, 6);
-    uint8_t blue = luaL_checkinteger(lua_state, 7);
-    int circle_points = 10;
-
-    //_matrix->drawLineWu(x, y, rad, rad, red, green, blue);
-
-    float prevX = 0;
-    float prevY = 0;
-    for (int i=0; i<circle_points+1; i++) {
-        float xr = rad*cos(((2*3.1415)/circle_points)*i + rot);
-        float yr = rad*sin(((2*3.1415)/circle_points)*i + rot);
-        _matrix->drawLineWu(x + prevX, y + prevY, x + xr, y + yr, red, green, blue);
-        prevX = xr;
-        prevY = yr;
-    }
-
-    return 1;
-}
-
 const luaL_Reg Lua_box2d_libs::box2d_functions[] = {
     {"createWorld", lua_createWorld},
     {"createDynamicBody", lua_createDynamicBody},
@@ -216,7 +191,6 @@ const luaL_Reg Lua_box2d_libs::box2d_functions[] = {
     {"applyForceToCenter", lua_applyForceToCenter},
     {"getPosition", lua_getPosition},
     {"getRotation", lua_getRotation},
-    {"drawCircle", lua_drawCircle},
     {"step", lua_step},
     {NULL, NULL}
 };
