@@ -132,6 +132,7 @@ void face_center(float *verts, int *faces, int k, float center[3]){
     center[2] /= VERTS_PER_FACE;
 }
 
+// precalculate face normals for performance gain
 void Graphics3D::calculateNormals() {
     face_normals = (float *) realloc(face_normals, sizeof(float *)*(face_count)*3);
     transformed_face_normals = (float *) realloc(transformed_face_normals, sizeof(float *)*(face_count)*3);
@@ -152,17 +153,16 @@ void Graphics3D::calculateNormals() {
     normals_precalculated = true;
 }
 
-//void drawSolid(double *verts, int *faces, int facelen, float r, float g, float b, uint8_t **buffer){
-void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen, double zoom){
+void Graphics3D::drawSolid(){
 	const int cx = matrixPanel->getWidth()/2;
     const int cy = matrixPanel->getHeight()/2;
     
-    int buf[facelen] = {0};
-    float Zarray[facelen] = {0};
+    int buf[face_count] = {0};
+    float Zarray[face_count] = {0};
     
     // calculate z-buffer on every frame
-    Zarr(verts,faces,facelen,Zarray); //gets array of all the z positions of the faces and dump them in "Zarray"
-	sort(Zarray,facelen,buf);        //get sorted indices of the z array to apply the "painter’s algorithm"
+    Zarr(transformed_vertices,faces,face_count,Zarray); //gets array of all the z positions of the faces and dump them in "Zarray"
+	sort(Zarray,face_count,buf);        //get sorted indices of the z array to apply the "painter’s algorithm"
 
     // used to store the 2d projected 3d coordinates
     float px[VERTS_PER_FACE] = {0};
@@ -183,15 +183,15 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
     }
 
     // iterate over every face
-    for (int j=0;j<facelen;j++){
+    for (int j=0;j<face_count;j++){
 		
 		int i = buf[j];
 
         // here is where the 3d coordinates are mapped onto a 2d xz surface
         for (int k=0; k<VERTS_PER_FACE; k++) {
-            float x = verts[faces[i*VERTS_PER_FACE+k]*3+0]+cameraPos[0];
-            float y = verts[faces[i*VERTS_PER_FACE+k]*3+1]+cameraPos[1];
-            float z = verts[faces[i*VERTS_PER_FACE+k]*3+2]+cameraPos[2];
+            float x = transformed_vertices[faces[i*VERTS_PER_FACE+k]*3+0]+cameraPos[0];
+            float y = transformed_vertices[faces[i*VERTS_PER_FACE+k]*3+1]+cameraPos[1];
+            float z = transformed_vertices[faces[i*VERTS_PER_FACE+k]*3+2]+cameraPos[2];
             x *= zoom/y;
             z *= zoom/y;
             px[k] = cx+x;
@@ -202,10 +202,10 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
         //http://www.opengl-tutorial.org/beginners-tutorials/tutorial-8-basic-shading/
 
         // diffuse color of the 3d face
-        float diffuseColor[3] = {colors[i*3 + 0], colors[i*3 + 1], colors[i*3 + 2]};
+        float diffuseColor[3] = {face_colors[i*3 + 0], face_colors[i*3 + 1], face_colors[i*3 + 2]};
 
         // color of the ambient licht
-        float ambientColor[3] = {colors[i*3 + 0]/10, colors[i*3 + 1]/10, colors[i*3 + 2]/10};
+        float ambientColor[3] = {face_colors[i*3 + 0]/10, face_colors[i*3 + 1]/10, face_colors[i*3 + 2]/10};
         
         // if normals are precalculated, get the normals, otherwise calculate them
         float faceNormal[3] = {0};
@@ -225,7 +225,7 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
             float dist_sq = 1;
             if (enable_diffuse || enable_specular) {
                 float centerFace[3] = {0};
-                face_center(verts, faces, i, centerFace);
+                face_center(transformed_vertices, faces, i, centerFace);
                 dist_sq = dist_squared(lightPos, centerFace);
             }
 
@@ -327,12 +327,41 @@ void Graphics3D::setRotation(float x, float y, float z) {
         Azx, Azy, Azz
     };
 
+    // rotate vertices
     apply_matrix(vertices, transformed_vertices, matrix, vert_count);
+
+    // if the normals are already calculated, we rotate then together with the vertices
     if (normals_precalculated) {
         apply_matrix(face_normals, transformed_face_normals, matrix, face_count);
     }
 }
 
-void Graphics3D::drawMesh() {
-    drawSolid(transformed_vertices,faces,face_colors,face_count,32);
+// draws the wireframe of the 3d model
+void Graphics3D::drawMesh(uint8_t r, uint8_t g, uint8_t b) {
+    const int cx = matrixPanel->getWidth()/2;
+    const int cy = matrixPanel->getHeight()/2;
+    
+    // used to store the 2d projected 3d coordinates
+    float px[VERTS_PER_FACE] = {0};
+    float py[VERTS_PER_FACE] = {0};
+
+    // iterate over every face
+    for (int i=0;i<face_count;i++){
+
+        // here is where the 3d coordinates are mapped onto a 2d xz surface
+        for (int k=0; k<VERTS_PER_FACE; k++) {
+            float x = transformed_vertices[faces[i*VERTS_PER_FACE+k]*3+0]+cameraPos[0];
+            float y = transformed_vertices[faces[i*VERTS_PER_FACE+k]*3+1]+cameraPos[1];
+            float z = transformed_vertices[faces[i*VERTS_PER_FACE+k]*3+2]+cameraPos[2];
+            x *= zoom/y;
+            z *= zoom/y;
+            px[k] = cx+x;
+            py[k] = cy+z;
+        }
+
+        matrixPanel->drawLineWu(px[0], py[0], px[1], py[1], r, g, b);
+        matrixPanel->drawLineWu(px[1], py[1], px[2], py[2], r, g, b);
+        matrixPanel->drawLineWu(px[2], py[2], px[3], py[3], r, g, b);
+        matrixPanel->drawLineWu(px[3], py[3], px[0], py[0], r, g, b);
+    }
 }

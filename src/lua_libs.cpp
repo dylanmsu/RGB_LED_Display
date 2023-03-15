@@ -28,6 +28,7 @@ const luaL_Reg Lua_libs::matrixfunctions[] = {
     {"push3dQuat", lua_push3dQuat},
     {"set3dRotation", lua_set3dRotation},
     {"draw3dsolid", lua_draw3dsolid},
+    {"draw3dmesh", lua_draw3dmesh},
     {"calculate3dNormals", lua_calculate3dNormals},
     {"draw", lua_updateScreen},
     {NULL, NULL}
@@ -148,7 +149,15 @@ int Lua_libs::lua_calculate3dNormals(lua_State *lua_state) {
 }
 
 int Lua_libs::lua_draw3dsolid(lua_State *lua_state) {
-    _graphics3d->drawMesh();
+    _graphics3d->drawSolid();
+    return 0;
+}
+
+int Lua_libs::lua_draw3dmesh(lua_State *lua_state) {
+    uint8_t r = luaL_checkinteger(lua_state, 1);
+    uint8_t g = luaL_checkinteger(lua_state, 2);
+    uint8_t b = luaL_checkinteger(lua_state, 3);
+    _graphics3d->drawMesh(r, g, b);
     return 0;
 }
 

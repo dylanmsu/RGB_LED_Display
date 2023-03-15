@@ -39,6 +39,7 @@ private:
     float lightColor[3] = {1.0, 1.0, 1.0};
     float lightPos[3] = {-5.0, 5.0, 5.0};
     float lightPower = 100;
+    float zoom = 32;
 
 public:
     Graphics3D(MatrixPanel *matrixPanel);
@@ -46,11 +47,11 @@ public:
 
     void calculateNormals();
 
-    void drawSolid(float *verts, int *faces, float *colors, int facelen, double zoom);
+    void drawSolid();
     void pushVertex(float x, float y, float z);
     void pushQuat(int p1, int p2, int p3, int p4, uint8_t r, uint8_t g, uint8_t b);
     void setRotation(float x, float y, float z);
-    void drawMesh();
+    void drawMesh(uint8_t r, uint8_t g, uint8_t b);
 };
 
 #endif  // GRAPHICS_3D_H
