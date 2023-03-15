@@ -10,7 +10,7 @@ extern "C" {
     #include "lauxlib.h"
 }
 
-class Lua_libs
+class Lua_matrix_libs
 {
 private:
     static lua_State *_lua;
@@ -36,8 +36,8 @@ private:
     static const luaL_Reg matrixfunctions[];
 
 public:
-    Lua_libs(lua_State *lua, MatrixPanel *matrix, Graphics3D *graphics3d);
-    ~Lua_libs();
+    Lua_matrix_libs(lua_State *lua, MatrixPanel *matrix, Graphics3D *graphics3d);
+    ~Lua_matrix_libs();
 
     static int luaopen_matrix_lib(lua_State *L);
 };
