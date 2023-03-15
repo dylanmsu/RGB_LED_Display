@@ -22,11 +22,16 @@ private:
     float *face_colors;
     float *face_normals;
 
+    float *transformed_vertices;
+    float *transformed_face_normals;
+
     int face_count;
     int vert_count;
 
     bool enable_specular = false;
     bool enable_diffuse = true;
+
+    bool normals_precalculated = false;
 
     // parapeters that may change later
     float rotation[3] = {0.0, 0.0, 0.0};
@@ -39,7 +44,7 @@ public:
     Graphics3D(MatrixPanel *matrixPanel);
     ~Graphics3D();
 
-    void calculate_normals();
+    void calculateNormals();
 
     void drawSolid(float *verts, int *faces, float *colors, int facelen, double zoom);
     void pushVertex(float x, float y, float z);

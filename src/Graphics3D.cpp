@@ -26,38 +26,6 @@ void apply_matrix(const float *source_verts, float *dest_verts, const float *mat
     }
 }
 
-void rotate(const float *source_verts, float *dest_verts, int len, double rX, double rY, double rZ)
-{
-    float cosz = cos(rZ);
-    float sinz = sin(rZ);
-
-    float cosy = cos(rY);
-    float siny = sin(rY);
-
-    float cosx = cos(rX);
-    float sinx = sin(rX);
-
-    float Axx = cosz*cosy;
-    float Axy = cosz*siny*sinx - sinz*cosx;
-    float Axz = cosz*siny*cosx + sinz*sinx;
-
-    float Ayx = sinz*cosy;
-    float Ayy = sinz*siny*sinx + cosz*cosx;
-    float Ayz = sinz*siny*cosx - cosz*sinx;
-
-    float Azx = -siny;
-    float Azy = cosy*sinx;
-    float Azz = cosy*cosx;
-
-    float matrix[9] = {
-        Axx, Axy, Axz, 
-        Ayx, Ayy, Ayz, 
-        Azx, Azy, Azz
-    };
-
-    apply_matrix(source_verts, dest_verts, matrix, len);
-}
-
 //sorts an array and returns an array of the indices
 void sort(float *arr,const int n, int *idx){
 	int i;
@@ -164,8 +132,9 @@ void face_center(float *verts, int *faces, int k, float center[3]){
     center[2] /= VERTS_PER_FACE;
 }
 
-void Graphics3D::calculate_normals() {
+void Graphics3D::calculateNormals() {
     face_normals = (float *) realloc(face_normals, sizeof(float *)*(face_count)*3);
+    transformed_face_normals = (float *) realloc(transformed_face_normals, sizeof(float *)*(face_count)*3);
     for (int i=0; i<face_count; i++) {
         float faceNormal[3] = {0};
         
@@ -174,7 +143,13 @@ void Graphics3D::calculate_normals() {
         face_normals[i*3 + 0] = faceNormal[0];
         face_normals[i*3 + 1] = faceNormal[1];
         face_normals[i*3 + 2] = faceNormal[2];
+
+        transformed_face_normals[i*3 + 0] = faceNormal[0];
+        transformed_face_normals[i*3 + 1] = faceNormal[1];
+        transformed_face_normals[i*3 + 2] = faceNormal[2];
     }
+
+    normals_precalculated = true;
 }
 
 //void drawSolid(double *verts, int *faces, int facelen, float r, float g, float b, uint8_t **buffer){
@@ -231,11 +206,16 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
 
         // color of the ambient licht
         float ambientColor[3] = {colors[i*3 + 0]/10, colors[i*3 + 1]/10, colors[i*3 + 2]/10};
-
+        
+        // if normals are precalculated, get the normals, otherwise calculate them
         float faceNormal[3] = {0};
-        faceNormal[0] = face_normals[i*3 + 0];
-        faceNormal[1] = face_normals[i*3 + 1];
-        faceNormal[2] = face_normals[i*3 + 2];
+        if (normals_precalculated) {
+            faceNormal[0] = transformed_face_normals[i*3 + 0];
+            faceNormal[1] = transformed_face_normals[i*3 + 1];
+            faceNormal[2] = transformed_face_normals[i*3 + 2];
+        } else {
+            getFaceNormal(vertices, faces, i, faceNormal);
+        }        
 
         //some crude optimization: if the face faces away from the camera, don't draw it.
         if (dot(camNormal, faceNormal) > 0.0) {
@@ -288,9 +268,16 @@ void Graphics3D::drawSolid(float *verts, int *faces, float *colors, int facelen,
 
 void Graphics3D::pushVertex(float x, float y, float z) {
     vertices = (float *) realloc(vertices, sizeof(float *)*(vert_count + 1)*3);
+    transformed_vertices = (float *) realloc(transformed_vertices, sizeof(float *)*(vert_count + 1)*3);
+    
     vertices[vert_count*3 + 0] = x;
     vertices[vert_count*3 + 1] = y;
     vertices[vert_count*3 + 2] = z;
+
+    transformed_vertices[vert_count*3 + 0] = x;
+    transformed_vertices[vert_count*3 + 1] = y;
+    transformed_vertices[vert_count*3 + 2] = z;
+
     vert_count += 1;
 }
 
@@ -312,13 +299,40 @@ void Graphics3D::pushQuat(int p1, int p2, int p3, int p4, uint8_t r, uint8_t g, 
 }
 
 void Graphics3D::setRotation(float x, float y, float z) {
-    rotation[0] = x;
-    rotation[1] = y;
-    rotation[2] = z;
+    
+    float cosx = cos(x);
+    float sinx = sin(x);
+
+    float cosy = cos(y);
+    float siny = sin(y);
+
+    float cosz = cos(z);
+    float sinz = sin(z);
+
+    float Axx = cosz*cosy;
+    float Axy = cosz*siny*sinx - sinz*cosx;
+    float Axz = cosz*siny*cosx + sinz*sinx;
+
+    float Ayx = sinz*cosy;
+    float Ayy = sinz*siny*sinx + cosz*cosx;
+    float Ayz = sinz*siny*cosx - cosz*sinx;
+
+    float Azx = -siny;
+    float Azy = cosy*sinx;
+    float Azz = cosy*cosx;
+
+    float matrix[9] = {
+        Axx, Axy, Axz, 
+        Ayx, Ayy, Ayz, 
+        Azx, Azy, Azz
+    };
+
+    apply_matrix(vertices, transformed_vertices, matrix, vert_count);
+    if (normals_precalculated) {
+        apply_matrix(face_normals, transformed_face_normals, matrix, face_count);
+    }
 }
 
 void Graphics3D::drawMesh() {
-    float rotated_verts[vert_count*3] = {0};
-    rotate(vertices, rotated_verts, vert_count, rotation[0], rotation[1], rotation[2]);
-    drawSolid(rotated_verts,faces,face_colors,face_count,32);
+    drawSolid(transformed_vertices,faces,face_colors,face_count,32);
 }

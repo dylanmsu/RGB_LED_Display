@@ -21,13 +21,6 @@
 #include "lua_libs.h"
 #include "FastMath.h"
 
-//#include "box2d/b2_math.h"
-//#include "box2d/b2_world.h"
-//#include "box2d/b2_body.h"
-//#include "box2d/b2_circle_shape.h"
-//#include "box2d/b2_polygon_shape.h"
-//#include "box2d/b2_fixture.h"
-
 extern "C" {
     #include "lua.h"
     #include "lualib.h"

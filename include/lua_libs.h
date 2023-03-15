@@ -31,6 +31,7 @@ private:
     static int lua_push3dQuat(lua_State *lua_state);
     static int lua_set3dRotation(lua_State *lua_state);
     static int lua_draw3dsolid(lua_State *lua_state);
+    static int lua_calculate3dNormals(lua_State *lua_state);
 
     static const luaL_Reg matrixfunctions[];
 
