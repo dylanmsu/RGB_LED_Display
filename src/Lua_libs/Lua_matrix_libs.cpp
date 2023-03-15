@@ -40,7 +40,7 @@ int Lua_matrix_libs::lua_drawPixel(lua_State *lua_state) {
     int grn = luaL_checkinteger(lua_state, 4);
     int blu = luaL_checkinteger(lua_state, 5);
     _matrix->drawPixel(x, y, red, grn, blu);
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_drawPixelHSV(lua_State *lua_state) {
@@ -50,7 +50,7 @@ int Lua_matrix_libs::lua_drawPixelHSV(lua_State *lua_state) {
     int sat = luaL_checkinteger(lua_state, 4);
     int val = luaL_checkinteger(lua_state, 5);
     _matrix->drawPixelHSV(x, y, hue, sat, val);
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_drawLine(lua_State *lua_state) {
@@ -62,7 +62,7 @@ int Lua_matrix_libs::lua_drawLine(lua_State *lua_state) {
     int grn = luaL_checkinteger(lua_state, 6);
     int blu = luaL_checkinteger(lua_state, 7);
     _matrix->drawLine(x0, y0, x1, y1, red, grn, blu);
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_drawLineWu(lua_State *lua_state) {
@@ -70,11 +70,11 @@ int Lua_matrix_libs::lua_drawLineWu(lua_State *lua_state) {
     float y0 = luaL_checknumber(lua_state, 2);
     float x1 = luaL_checknumber(lua_state, 3);
     float y1 = luaL_checknumber(lua_state, 4);
-    int red = luaL_checkinteger(lua_state, 5);
-    int grn = luaL_checkinteger(lua_state, 6);
-    int blu = luaL_checkinteger(lua_state, 7);
+    uint8_t red = luaL_checkinteger(lua_state, 5);
+    uint8_t grn = luaL_checkinteger(lua_state, 6);
+    uint8_t blu = luaL_checkinteger(lua_state, 7);
     _matrix->drawLineWu(x0, y0, x1, y1, red, grn, blu);
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_fillQuat(lua_State *lua_state) {
@@ -97,17 +97,17 @@ int Lua_matrix_libs::lua_fillQuat(lua_State *lua_state) {
     float alpha = luaL_checknumber(lua_state, 12);
     
     _matrix->fillQuat((float *)px, (float *)py, red, grn, blu, alpha);
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_clearScreen(lua_State *lua_state) {
     _matrix->fillScreen(0x0000);
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_setBrightness(lua_State *lua_state) {
     _matrix->setBrightness(luaL_checkinteger(lua_state, 1));
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_push3dVertex(lua_State *lua_state) {
@@ -117,7 +117,7 @@ int Lua_matrix_libs::lua_push3dVertex(lua_State *lua_state) {
         (float)luaL_checknumber(lua_state, 3)
     );
 
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_push3dQuat(lua_State *lua_state) {
@@ -131,7 +131,7 @@ int Lua_matrix_libs::lua_push3dQuat(lua_State *lua_state) {
     uint8_t g = luaL_checknumber(lua_state, 6);
     uint8_t b = luaL_checknumber(lua_state, 7);
     _graphics3d->pushQuat(p1, p2, p3, p4, r, g, b);
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_set3dRotation(lua_State *lua_state) {
@@ -139,23 +139,66 @@ int Lua_matrix_libs::lua_set3dRotation(lua_State *lua_state) {
     float y = luaL_checknumber(lua_state, 2);
     float z = luaL_checknumber(lua_state, 3);
     _graphics3d->setRotation(x, y, z);
-    return 0;
+    return 1;
+}
+
+int Lua_matrix_libs::lua_calculate3dNormals(lua_State *lua_state) {
+    _graphics3d->calculateNormals();
+    return 1;
 }
 
 int Lua_matrix_libs::lua_draw3dsolid(lua_State *lua_state) {
     _graphics3d->drawMesh();
-    return 0;
+    return 1;
 }
 
 int Lua_matrix_libs::lua_drawCircle(lua_State *lua_state) {
-    int x = luaL_checkinteger(lua_state, 1);
-    int y = luaL_checkinteger(lua_state, 2);
+    int xc = luaL_checkinteger(lua_state, 1);
+    int yc = luaL_checkinteger(lua_state, 2);
     int r = luaL_checkinteger(lua_state, 3);
     uint8_t red = luaL_checkinteger(lua_state, 4);
     uint8_t green = luaL_checkinteger(lua_state, 5);
     uint8_t blue = luaL_checkinteger(lua_state, 6);
-    uint16_t color = (red & 0b11111000) | ((green & 0b11111100) << 3) | ((blue & 0b11111000) << 5);
-    _matrix->fillCircle(x, y, r, color);
+
+    int x = 0, y = r;
+    int d = 3 - 2 * r;
+    _matrix->drawPixel(xc+x, yc+y, red, green, blue);
+    _matrix->drawPixel(xc-x, yc+y, red, green, blue);
+    _matrix->drawPixel(xc+x, yc-y, red, green, blue);
+    _matrix->drawPixel(xc-x, yc-y, red, green, blue);
+    _matrix->drawPixel(xc+y, yc+x, red, green, blue);
+    _matrix->drawPixel(xc-y, yc+x, red, green, blue);
+    _matrix->drawPixel(xc+y, yc-x, red, green, blue);
+    _matrix->drawPixel(xc-y, yc-x, red, green, blue);
+    while (y >= x)
+    {
+        // for each pixel we will
+        // draw all eight pixels
+         
+        x++;
+ 
+        // check for decision parameter
+        // and correspondingly
+        // update d, x, y
+        if (d > 0)
+        {
+            y--;
+            d = d + 4 * (x - y) + 10;
+        }
+        else
+        {
+            d = d + 4 * x + 6;
+        }
+        _matrix->drawPixel(xc+x, yc+y, red, green, blue);
+        _matrix->drawPixel(xc-x, yc+y, red, green, blue);
+        _matrix->drawPixel(xc+x, yc-y, red, green, blue);
+        _matrix->drawPixel(xc-x, yc-y, red, green, blue);
+        _matrix->drawPixel(xc+y, yc+x, red, green, blue);
+        _matrix->drawPixel(xc-y, yc+x, red, green, blue);
+        _matrix->drawPixel(xc+y, yc-x, red, green, blue);
+        _matrix->drawPixel(xc-y, yc-x, red, green, blue);
+    }
+    return 1;
 }
 
 int Lua_matrix_libs::lua_updateScreen(lua_State *lua_state) {

@@ -59,7 +59,7 @@ int Lua_box2d_libs::lua_createWorld(lua_State *lua_state) {
     b2Vec2 gravity(gravity_x, gravity_y);
     _world = new b2World(gravity);
 
-    return 0;
+    return 1;
 }
 
 int Lua_box2d_libs::lua_createDynamicBody(lua_State *lua_state) {
@@ -73,10 +73,10 @@ int Lua_box2d_libs::lua_createDynamicBody(lua_State *lua_state) {
     bodyDef.position.Set(position_x, position_y);
     _bodies[num_bodies] = _world->CreateBody(&bodyDef);
 
-    lua_pushnumber(lua_state, num_bodies);
+    lua_pushinteger(lua_state, num_bodies);
 
     num_bodies += 1;
-    return 0;
+    return 1;
 }
 
 int Lua_box2d_libs::lua_createStaticBody(lua_State *lua_state) {
@@ -90,19 +90,20 @@ int Lua_box2d_libs::lua_createStaticBody(lua_State *lua_state) {
     bodyDef.position.Set(position_x, position_y);
     _bodies[num_bodies] = _world->CreateBody(&bodyDef);
 
-    lua_pushnumber(lua_state, num_bodies);
+    lua_pushinteger(lua_state, num_bodies);
 
     num_bodies += 1;
-    return 0;
+    return 1;
 }
 
 int Lua_box2d_libs::lua_setAsBox(lua_State *lua_state) {
     int body_idx = luaL_checkinteger(lua_state, 1);
     float width = luaL_checknumber(lua_state, 2);
     float height = luaL_checknumber(lua_state, 3);
-    float density = luaL_checknumber(lua_state, 4);
-    float friction = luaL_checknumber(lua_state, 5);
-    float restitution = luaL_checknumber(lua_state, 6);
+    float angle = luaL_checknumber(lua_state, 4);
+    float density = luaL_checknumber(lua_state, 5);
+    float friction = luaL_checknumber(lua_state, 6);
+    float restitution = luaL_checknumber(lua_state, 7);
 
     b2PolygonShape box;
     box.SetAsBox(width, height);
@@ -114,7 +115,7 @@ int Lua_box2d_libs::lua_setAsBox(lua_State *lua_state) {
     _bodies[body_idx]->CreateFixture(&fixtureDef);
 
     //lua_pushnumber(lua_state, body_idx);
-    return 0;
+    return 1;
 }
 
 int Lua_box2d_libs::lua_setAsCircle(lua_State *lua_state) {
@@ -134,7 +135,7 @@ int Lua_box2d_libs::lua_setAsCircle(lua_State *lua_state) {
     _bodies[body_idx]->CreateFixture(&fixtureDef);
 
     //lua_pushnumber(lua_state, body_idx);
-    return 0;
+    return 1;
 }
 
 int Lua_box2d_libs::lua_applyForceToCenter(lua_State *lua_state) {
@@ -146,7 +147,7 @@ int Lua_box2d_libs::lua_applyForceToCenter(lua_State *lua_state) {
     _bodies[body_idx]->ApplyForceToCenter(force, true);
 
     //lua_pushnumber(lua_state, body_idx);
-    return 0;
+    return 1;
 }
 
 int Lua_box2d_libs::lua_getRotation(lua_State *lua_state) {
@@ -155,7 +156,7 @@ int Lua_box2d_libs::lua_getRotation(lua_State *lua_state) {
     float angle = _bodies[body_idx]->GetAngle();
 
     lua_pushnumber(lua_state, angle);
-    return 0;
+    return 1;
 }
 
 int Lua_box2d_libs::lua_getPosition(lua_State *lua_state) {
@@ -169,7 +170,7 @@ int Lua_box2d_libs::lua_getPosition(lua_State *lua_state) {
     lua_rawseti (lua_state, -2, 1);
     lua_pushnumber(lua_state, position.y);
     lua_rawseti (lua_state, -2, 2);
-    return 0;
+    return 1;
 }
 
 int Lua_box2d_libs::lua_step(lua_State *lua_state) {
@@ -178,6 +179,32 @@ int Lua_box2d_libs::lua_step(lua_State *lua_state) {
     int positionIterations = luaL_checkinteger(lua_state, 3);
 
     _world->Step(timeStep, velocityIterations, positionIterations);
+    return 1;
+}
+
+int Lua_box2d_libs::lua_drawCircle(lua_State *lua_state) {
+    float x = luaL_checknumber(lua_state, 1);
+    float y = luaL_checknumber(lua_state, 2);
+    float rad = luaL_checknumber(lua_state, 3);
+    float rot = luaL_checknumber(lua_state, 4);
+    uint8_t red = luaL_checkinteger(lua_state, 5);
+    uint8_t green = luaL_checkinteger(lua_state, 6);
+    uint8_t blue = luaL_checkinteger(lua_state, 7);
+    int circle_points = 10;
+
+    //_matrix->drawLineWu(x, y, rad, rad, red, green, blue);
+
+    float prevX = 0;
+    float prevY = 0;
+    for (int i=0; i<circle_points+1; i++) {
+        float xr = rad*cos(((2*3.1415)/circle_points)*i + rot);
+        float yr = rad*sin(((2*3.1415)/circle_points)*i + rot);
+        _matrix->drawLineWu(x + prevX, y + prevY, x + xr, y + yr, red, green, blue);
+        prevX = xr;
+        prevY = yr;
+    }
+
+    return 1;
 }
 
 const luaL_Reg Lua_box2d_libs::box2d_functions[] = {
@@ -189,6 +216,7 @@ const luaL_Reg Lua_box2d_libs::box2d_functions[] = {
     {"applyForceToCenter", lua_applyForceToCenter},
     {"getPosition", lua_getPosition},
     {"getRotation", lua_getRotation},
+    {"drawCircle", lua_drawCircle},
     {"step", lua_step},
     {NULL, NULL}
 };

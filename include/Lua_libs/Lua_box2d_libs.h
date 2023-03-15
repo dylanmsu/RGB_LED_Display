@@ -41,6 +41,8 @@ private:
 
     static int lua_step(lua_State *lua_state);
 
+    static int lua_drawCircle(lua_State *lua_state);
+
     static const luaL_Reg box2d_functions[];
 
 public:

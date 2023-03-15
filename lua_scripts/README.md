@@ -40,4 +40,4 @@
 - applyForceToCenter(body_idx, force_x, force_y)
 - getPosition(body_idx)
 - getRotation(body_idx)
-- step()
+- step(timeStep, velocityIterations, positionIterations)
