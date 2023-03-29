@@ -58,8 +58,9 @@ function initialize()
         y = ((i - 1)//grid_width) + startpos[2]
 
         if (x == w/2 and y == h/2) then
-            velocity[i] = {0 ,0}
+            velocity[i] = {0, 0}
         else
+            --vector tangent to the position of the black hole: (x, y) = (y, -x)
             velocity[i] = normalize({(y - w/2), -(x - w/2)})
             velocity[i][1] = velocity[i][1]/3
             velocity[i][2] = velocity[i][2]/3
@@ -73,18 +74,17 @@ function initialize()
 end
 
 function physics()
+    -- iterate over every particle 
     for i=1, numBodies do
         if (destroyed[i] == false) then
 
             local p = {pos[i][1]-blhole[1],pos[i][2]-blhole[2]};
-
             local distance_squared = p[1]*p[1]+p[2]*p[2]
-            local np = normalize(p)
 
-            --print("vel[" .. i .. ", " .. velocity[i][1] .. ", " .. velocity[i][2] .. "]")
-            --print("np[" .. i .. ", " .. np[1] .. ", " .. np[2] .. "]")
-            --print("p[" .. i .. ", " .. p[1] .. ", " .. p[2] .. "]")
+            -- find the normal vector pointing from the black hole to the particle
+            local np = normalize(p)
             
+            -- apply gravity from the black hole
             local acelleration = {}
             if (p[1] == 0 and p[2] == 0) then
                 acelleration[1] = 0
@@ -94,25 +94,28 @@ function physics()
                 acelleration[2] = -np[2]/(distance_squared*mass[i])
             end
             
-            --print("acc[" .. i .. ", " .. acelleration[1] .. ", " .. acelleration[2] .. "]")
-            
+            -- integrate acceleration to get velocity
             velocity[i][1] = velocity[i][1] + acelleration[1]
             velocity[i][2] = velocity[i][2] + acelleration[2]
             
-            -- air resistance
-            velocity[i][1] = (velocity[i][1])*0.999
-            velocity[i][2] = (velocity[i][2])*0.999
+            -- apply air resistance
+            velocity[i][1] = velocity[i][1]*0.999
+            velocity[i][2] = velocity[i][2]*0.999
  
             -- integrate velocity to get the position
-            pos[i][1] = velocity[i][1] + pos[i][1]
+            pos[i][1] = pos[i][1] + velocity[i][1]
             pos[i][2] = pos[i][2] + velocity[i][2]
 
+            -- draw particles
             matrix.drawPixel(math.floor(pos[i][1]), math.floor(pos[i][2]), color[i][1], color[i][2], color[i][3])
+            
+            -- delete particle if particle is inside black hole or is 100 pixels away from black hole
             if (distance_squared<1 or distance_squared>10000) then
                 destroyed[i] = true
                 numdestroyed = numdestroyed + 1;
             end
             
+            -- if all bodies are deleted, reinitialize particles
             if (numdestroyed >= numBodies) then
                 initialize()
             end
@@ -130,9 +133,9 @@ function run()
     physics()
 
     matrix.drawPixel(math.floor(blhole[1]-1), math.floor(blhole[2]-1), 64, 64, 64)
-    matrix.drawPixel(math.floor(blhole[1]-1), math.floor(blhole[2]), 64, 64, 64)
-    matrix.drawPixel(math.floor(blhole[1]), math.floor(blhole[2]-1), 64, 64, 64)
-    matrix.drawPixel(math.floor(blhole[1]), math.floor(blhole[2]), 64, 64, 64)
+    matrix.drawPixel(math.floor(blhole[1]-1), math.floor(blhole[2]),   64, 64, 64)
+    matrix.drawPixel(math.floor(blhole[1]),   math.floor(blhole[2]-1), 64, 64, 64)
+    matrix.drawPixel(math.floor(blhole[1]),   math.floor(blhole[2]),   64, 64, 64)
 
     --matrix.draw()
     --delay(100)

@@ -15,6 +15,12 @@
 
 #include "freertos/semphr.h"
 
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <Update.h>
+
 #include "pinmap.h"
 #include "MatrixPanel.h"
 #include "Graphics3D.h"
@@ -26,6 +32,14 @@ extern "C" {
     #include "lualib.h"
     #include "lauxlib.h"
 }
+
+const char* host = "esp32";
+const char* ssid = "---";
+const char* password = "----";
+
+WebServer server(80);
+
+#include "public.h"
 
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
@@ -355,7 +369,7 @@ static void i2c_master_init()
 
     i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
 
-    /*printf("scanning the bus...\r\n\r\n");
+    printf("scanning the bus...\r\n\r\n");
     int devices_found = 0;
     for(int address = 1; address < 127; address++) {
         // create and execute the command link
@@ -371,7 +385,7 @@ static void i2c_master_init()
         fflush(stdout);
         i2c_cmd_link_delete(cmd);
     }
-    if(devices_found == 0) printf("\r\n-> no devices found\r\n");*/
+    if(devices_found == 0) printf("\r\n-> no devices found\r\n");//*/
 }
 
 // http://ww1.microchip.com/downloads/en/DeviceDoc/MCP7940N-Battery-Backed-I2C-RTCC-with-SRAM-20005010G.pdf
@@ -466,29 +480,61 @@ void list_files() {
     }
 }
 
+int acellero_init() {
+    uint8_t whoami[1] = { 0 };
+    i2c_master_read_slave_reg(I2C_NUM_0, 0x1D,  0b00001111, whoami, 1);
+    if (whoami[0] != 65) {
+        return 0;
+    } else {
+        uint8_t CTRL1[1] = { 0b00011111 };
+        i2c_master_write_slave_reg(I2C_NUM_0, 0x1D, 0b00100000, CTRL1, 1);
+        return 1;
+    }  
+}
+
+float get_acellero_x() {
+    uint8_t data[2] = { 0 };
+    i2c_master_read_slave_reg(I2C_NUM_0, 0x1D,  0b00101000, data, 2);
+    int intValue = (int16_t)(data[1] << 8) + data[0];
+    return intValue/16384.0f;
+}
+
+float get_acellero_y() {
+    uint8_t data[2] = { 0 };
+    i2c_master_read_slave_reg(I2C_NUM_0, 0x1D,  0b00101010, data, 2);
+    int intValue = (int16_t)(data[1] << 8) + data[0];
+    return intValue/16384.0f;
+}
+
+float get_acellero_z() {
+    uint8_t data[2] = { 0 };
+    i2c_master_read_slave_reg(I2C_NUM_0, 0x1D,  0b00101100, data, 2);
+    int intValue = (int16_t)(data[1] << 8) + data[0];
+    return intValue/16384.0f;
+}
+
 static int lua_getAcceleration_x(lua_State *lua_state) {
-    //TODO
-    lua_pushnumber(lua_state, 0);
+    float acelleration_x = get_acellero_x();
+    lua_pushnumber(lua_state, acelleration_x);
     return 1;
 }
 
 static int lua_getAcceleration_y(lua_State *lua_state) {
-    //TODO
-    lua_pushnumber(lua_state, 0);
+    float acelleration_y = get_acellero_y();
+    lua_pushnumber(lua_state, acelleration_y);
     return 1;
 }
 
 static int lua_getAcceleration_z(lua_State *lua_state) {
-    //TODO
-    lua_pushnumber(lua_state, 0);
+    float acelleration_z = get_acellero_z();
+    lua_pushnumber(lua_state, acelleration_z);
     return 1;
 }
 
 void setup() {
     i2c_master_init();
 
-    uint8_t data[1] = { 0 };
-    i2c_master_write_slave_reg(I2C_NUM_0, 0x68, 0x6B, data, 1);
+    acellero_init();
 
     // Initialize rtc
     //ESP_ERROR_CHECK(i2c_master_write_slave_reg(I2C_NUM_0, 0x6F, 0x00, &(0x80), 1));
@@ -519,7 +565,65 @@ void setup() {
     lua_register(lua_state, "getAccX", (const lua_CFunction) &lua_getAcceleration_x);
     lua_register(lua_state, "getAccY", (const lua_CFunction) &lua_getAcceleration_y);
     lua_register(lua_state, "getAccZ", (const lua_CFunction) &lua_getAcceleration_z);
+
+    //WiFi.begin(ssid, password);
+
+    //while (WiFi.status() != WL_CONNECTED) {
+    //    delay(500);
+    //    Serial.print(".");
+    //}
+    //Serial.println("");
+    //Serial.print("Connected to ");
+    //Serial.println(ssid);
+    //Serial.print("IP address: ");
+    //Serial.println(WiFi.localIP());
+
+    /*use mdns for host name resolution*/
+    //if (!MDNS.begin(host)) { //http://esp32.local
+    //    Serial.println("Error setting up MDNS responder!");
+    //    while (1) {
+    //    delay(1000);
+    //    }
+    //}
     
+    //Serial.println("mDNS responder started");
+    /*return index page which is stored in serverIndex */
+    //server.on("/", HTTP_GET, []() {
+    //    server.sendHeader("Connection", "close");
+    //    server.send(200, "text/html", loginIndex);
+    //});
+    //server.on("/serverIndex", HTTP_GET, []() {
+    //    server.sendHeader("Connection", "close");
+    //    server.send(200, "text/html", serverIndex);
+    //});
+    ///*handling uploading firmware file */
+    //server.on("/update", HTTP_POST, []() {
+    //    server.sendHeader("Connection", "close");
+    //    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    //    ESP.restart();
+    //}, []() {
+    //    HTTPUpload& upload = server.upload();
+    //    if (upload.status == UPLOAD_FILE_START) {
+    //        Serial.printf("Update: %s\n", upload.filename.c_str());
+    //        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { //start with max available size
+    //            Update.printError(Serial);
+    //        }
+    //    } 
+    //    else if (upload.status == UPLOAD_FILE_WRITE) {
+    //        /* flashing firmware to ESP*/
+    //        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+    //            Update.printError(Serial);
+    //        }
+    //    } 
+    //    else if (upload.status == UPLOAD_FILE_END) {
+    //        if (Update.end(true)) { //true to set the size to the current progress
+    //            Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+    //        } else {
+    //            Update.printError(Serial);
+    //        }
+    //    }
+    //});
+    //server.begin();
 
     list_files();
 
@@ -562,4 +666,7 @@ void setup() {
     //xTaskCreate(&run_lua_task,"lua task", 4096*8, &current_file_idx, 0, &lua_task_handle);
 }
 
-void loop() {}
+void loop() {
+    //server.handleClient();
+    //delay(1);
+}

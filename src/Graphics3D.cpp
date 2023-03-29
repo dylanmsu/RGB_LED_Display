@@ -7,9 +7,12 @@ Graphics3D::Graphics3D(MatrixPanel *matrixPanel)
 
 Graphics3D::~Graphics3D()
 {
-    free(vertices);
     free(faces);
+    free(vertices);
     free(face_colors);
+    free(face_normals);
+    free(transformed_vertices);
+    free(transformed_face_normals);
 }
 
 void apply_matrix(const float *source_verts, float *dest_verts, const float *matrix, int len) {
@@ -134,8 +137,10 @@ void face_center(float *verts, int *faces, int k, float center[3]){
 
 // precalculate face normals for performance gain
 void Graphics3D::calculateNormals() {
+    // allocate memory to store the normals
     face_normals = (float *) realloc(face_normals, sizeof(float *)*(face_count)*3);
     transformed_face_normals = (float *) realloc(transformed_face_normals, sizeof(float *)*(face_count)*3);
+
     for (int i=0; i<face_count; i++) {
         float faceNormal[3] = {0};
         
@@ -336,7 +341,7 @@ void Graphics3D::setRotation(float x, float y, float z) {
     }
 }
 
-// draws the wireframe of the 3d model
+// draws the wireframe of the 3d model (all lines are drawn twice for now)
 void Graphics3D::drawMesh(uint8_t r, uint8_t g, uint8_t b) {
     const int cx = matrixPanel->getWidth()/2;
     const int cy = matrixPanel->getHeight()/2;
@@ -345,7 +350,7 @@ void Graphics3D::drawMesh(uint8_t r, uint8_t g, uint8_t b) {
     float px[VERTS_PER_FACE] = {0};
     float py[VERTS_PER_FACE] = {0};
 
-    // iterate over every face
+    // iterate over every face all
     for (int i=0;i<face_count;i++){
 
         // here is where the 3d coordinates are mapped onto a 2d xz surface

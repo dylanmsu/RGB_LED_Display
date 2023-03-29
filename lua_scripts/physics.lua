@@ -1,11 +1,3 @@
-function setInterval(interval)
-    while true do
-        run()
-        matrix.draw()
-        delay(interval)
-    end
-end
-
 w = 32
 h = 32
 
@@ -186,6 +178,7 @@ matrix.setBrightness(4)
 initialize()
 
 function run()
+    gravity = {getAccX(), getAccY()};
     matrix.clearScreen()
 
     physics()
