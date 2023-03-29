@@ -24,7 +24,8 @@
 #include "pinmap.h"
 #include "MatrixPanel.h"
 #include "Graphics3D.h"
-#include "lua_libs.h"
+#include "Lua_libs/Lua_matrix_libs.h"
+#include "Lua_libs/Lua_box2d_libs.h"
 #include "FastMath.h"
 
 extern "C" {
@@ -50,7 +51,8 @@ lua_State *lua_state;
 MatrixPanel matrixPanel(32,32);
 Graphics3D graphics3D(&matrixPanel);
 
-Lua_libs lua_libs(lua_state, &matrixPanel, &graphics3D);
+Lua_matrix_libs lua_matrix_libs(lua_state, &matrixPanel, &graphics3D);
+Lua_box2d_libs lua_box2d_libs(lua_state, &matrixPanel);
 
 // Mount path for the partition
 static sdmmc_card_t *mount_card = NULL;
@@ -549,7 +551,8 @@ void setup() {
     luaL_requiref( lua_state, "table", luaopen_table, 1 );
     luaL_requiref( lua_state, "base", luaopen_base, 1 );
     luaL_requiref( lua_state, "string", luaopen_string, 1 );
-    luaL_requiref( lua_state, "matrix", lua_libs.luaopen_matrix_lib, 1 );
+    luaL_requiref( lua_state, "matrix", lua_matrix_libs.luaopen_matrix_lib, 1 );
+    luaL_requiref( lua_state, "physics", lua_box2d_libs.luaopen_box2d_lib, 1 );
     lua_pop( lua_state, 1 );
 
     // install functions

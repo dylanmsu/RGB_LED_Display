@@ -87,7 +87,7 @@ void MatrixPanel::drawPixelRGBA(int16_t x, int16_t y, uint8_t red, uint8_t grn, 
     int err = pixel_mapper(x, y, &i, &j);
     if (!err) {
         // clamp alpha between 0 and 1
-        alpha = min(max(alpha, 0.0f), 1.0f);
+        //alpha = min(max(alpha, 0.0f), 1.0f);
 
         int idx = i + _width*2*j;
         // [new pixel] = [bottom pixel]*(1-alpha) + [top pixel]*alpha
@@ -291,7 +291,6 @@ void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8
 				i++;
 			}
 		}
-		
 		
 		for (i=0; i<nodes; i+=2){
 			int nodeXi = nodeX[i];
