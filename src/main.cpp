@@ -371,7 +371,7 @@ static void i2c_master_init()
 
     i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
 
-    printf("scanning the bus...\r\n\r\n");
+    /*printf("scanning the bus...\r\n\r\n");
     int devices_found = 0;
     for(int address = 1; address < 127; address++) {
         // create and execute the command link

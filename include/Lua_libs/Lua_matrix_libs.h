@@ -24,11 +24,12 @@ private:
     static int lua_fillQuat(lua_State *lua_state);
     static int lua_clearScreen(lua_State *lua_state);
     static int lua_setBrightness(lua_State *lua_state);
-    static int lua_drawCircle(lua_State *lua_state);
+    static int lua_drawAaCircle(lua_State *lua_state);
     static int lua_updateScreen(lua_State *lua_state);
 
-    static int lua_push3dVertex(lua_State *lua_state);
-    static int lua_push3dQuat(lua_State *lua_state);
+    static int lua_set3dVertices(lua_State *lua_state);
+    static int lua_set3dFaces(lua_State *lua_state);
+    static int lua_set3dFaceColors(lua_State *lua_state);
     static int lua_set3dRotation(lua_State *lua_state);
     static int lua_draw3dsolid(lua_State *lua_state);
     static int lua_draw3dmesh(lua_State *lua_state);

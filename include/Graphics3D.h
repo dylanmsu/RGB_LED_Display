@@ -49,7 +49,10 @@ public:
 
     void drawSolid();
     void pushVertex(float x, float y, float z);
+    void setVertices(float *verts, int size);
     void pushQuat(int p1, int p2, int p3, int p4, uint8_t r, uint8_t g, uint8_t b);
+    void setFaces(int *quats, int size);
+    void setFaceColors(uint8_t *colors, int size);
     void setRotation(float x, float y, float z);
     void drawMesh(uint8_t r, uint8_t g, uint8_t b);
 };

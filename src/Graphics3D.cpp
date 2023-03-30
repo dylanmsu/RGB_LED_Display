@@ -271,36 +271,34 @@ void Graphics3D::drawSolid(){
     }
 }
 
-void Graphics3D::pushVertex(float x, float y, float z) {
-    vertices = (float *) realloc(vertices, sizeof(float *)*(vert_count + 1)*3);
-    transformed_vertices = (float *) realloc(transformed_vertices, sizeof(float *)*(vert_count + 1)*3);
-    
-    vertices[vert_count*3 + 0] = x;
-    vertices[vert_count*3 + 1] = y;
-    vertices[vert_count*3 + 2] = z;
+void Graphics3D::setVertices(float *verts, int size) {
+    vertices = (float *) realloc(vertices, sizeof(float *)*size);
+    transformed_vertices = (float *) realloc(transformed_vertices, sizeof(float *)*size);
 
-    transformed_vertices[vert_count*3 + 0] = x;
-    transformed_vertices[vert_count*3 + 1] = y;
-    transformed_vertices[vert_count*3 + 2] = z;
+    for (int i=0; i<size; i++) {
+        vertices[i] = verts[i];
+        transformed_vertices[i] = verts[i];
+    }
 
-    vert_count += 1;
+    vert_count = size/3.0f;
 }
 
-void Graphics3D::pushQuat(int p1, int p2, int p3, int p4, uint8_t r, uint8_t g, uint8_t b) {
-    /* Reallocating memory */
-    faces = (int *) realloc(faces, sizeof(int *)*(face_count + 1)*VERTS_PER_FACE);
-    face_colors = (float *) realloc(face_colors, sizeof(float *)*(face_count + 1)*3);
+void Graphics3D::setFaces(int *quats, int size) {
+    faces = (int *) realloc(faces, sizeof(int *)*size);
 
-    faces[face_count*VERTS_PER_FACE + 0] = p1;
-    faces[face_count*VERTS_PER_FACE + 1] = p2;
-    faces[face_count*VERTS_PER_FACE + 2] = p3;
-    faces[face_count*VERTS_PER_FACE + 3] = p4;
+    for (int i=0; i<size; i++) {
+        faces[i] = quats[i];
+    }
 
-    face_colors[face_count*3 + 0] = clamp(r/255.0,1,0);
-    face_colors[face_count*3 + 1] = clamp(g/255.0,1,0);
-    face_colors[face_count*3 + 2] = clamp(b/255.0,1,0);
+    face_count = size/4;
+}
 
-    face_count += 1;
+void Graphics3D::setFaceColors(uint8_t *colors, int size) {
+    face_colors = (float *) realloc(face_colors, sizeof(float *)*size);
+
+    for (int i=0; i<size; i++) {
+        face_colors[i] = clamp(colors[i]/255.0f,1,0);
+    }
 }
 
 void Graphics3D::setRotation(float x, float y, float z) {

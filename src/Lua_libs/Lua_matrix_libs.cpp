@@ -21,11 +21,12 @@ const luaL_Reg Lua_matrix_libs::matrixfunctions[] = {
     {"drawLine", lua_drawLine},
     {"drawLineWu", lua_drawLineWu},
     {"fillQuat", lua_fillQuat},
-    {"drawCircle", lua_drawCircle},
+    {"drawCircle", lua_drawAaCircle},
     {"clearScreen", lua_clearScreen},
     {"setBrightness", lua_setBrightness},
-    {"push3dVertex", lua_push3dVertex},
-    {"push3dQuat", lua_push3dQuat},
+    {"set3dVertices", lua_set3dVertices},
+    {"set3dFaces", lua_set3dFaces},
+    {"set3dFaceColors", lua_set3dFaceColors},
     {"set3dRotation", lua_set3dRotation},
     {"draw3dsolid", lua_draw3dsolid},
     {"draw3dmesh", lua_draw3dmesh},
@@ -111,28 +112,112 @@ int Lua_matrix_libs::lua_setBrightness(lua_State *lua_state) {
     return 1;
 }
 
-int Lua_matrix_libs::lua_push3dVertex(lua_State *lua_state) {
-    _graphics3d->pushVertex(
-        (float)luaL_checknumber(lua_state, 1),
-        (float)luaL_checknumber(lua_state, 2),
-        (float)luaL_checknumber(lua_state, 3)
-    );
+int Lua_matrix_libs::lua_set3dVertices(lua_State *lua_state) {
+    luaL_checktype(lua_state, 1, LUA_TTABLE);
+    // let alone excessive arguments (idiomatic), or do:
+    lua_settop(lua_state, 1);
 
-    return 1;
+    int a_size = lua_rawlen(lua_state, 1); // absolute indexing for arguments
+    float buf[a_size] = { 0 };
+
+    for (int i = 1; i <= a_size; i++) {
+        lua_pushinteger(lua_state, i);
+        lua_gettable(lua_state, 1); // always give a chance to metamethods
+        // OTOH, metamethods are already broken here with lua_rawlen()
+        // if you are on 5.2, use lua_len()
+
+        if (lua_isnil(lua_state, -1)) { // relative indexing for "locals"
+            a_size = i-1; // fix actual size (e.g. 4th nil means a_size==3)
+            break;
+        }
+
+        if (!lua_isnumber(lua_state, -1)) // optional check
+            return luaL_error(lua_state, "item %d invalid (number required, got %s)",
+                              i, luaL_typename(lua_state, -1));
+
+        lua_Number b = lua_tonumber(lua_state, -1);
+
+        buf[i-1] = b; // Lua is 1-based, C is 0-based
+        lua_pop(lua_state, 1);
+    }
+
+    printf("size: %i\n\r",  a_size);
+
+    _graphics3d->setVertices(buf, a_size);
+
+    return 0;
 }
 
-int Lua_matrix_libs::lua_push3dQuat(lua_State *lua_state) {
-    fflush(stdout);
-    int p1 = luaL_checkinteger(lua_state, 1);
-    int p2 = luaL_checkinteger(lua_state, 2);
-    int p3 = luaL_checkinteger(lua_state, 3);
-    int p4 = luaL_checkinteger(lua_state, 4);
+int Lua_matrix_libs::lua_set3dFaces(lua_State *lua_state) {
+    luaL_checktype(lua_state, 1, LUA_TTABLE);
+    // let alone excessive arguments (idiomatic), or do:
+    lua_settop(lua_state, 1);
 
-    uint8_t r = luaL_checknumber(lua_state, 5);
-    uint8_t g = luaL_checknumber(lua_state, 6);
-    uint8_t b = luaL_checknumber(lua_state, 7);
-    _graphics3d->pushQuat(p1, p2, p3, p4, r, g, b);
-    return 1;
+    int a_size = lua_rawlen(lua_state, 1); // absolute indexing for arguments
+    int buf[a_size] = { 0 };
+
+    for (int i = 1; i <= a_size; i++) {
+        lua_pushinteger(lua_state, i);
+        lua_gettable(lua_state, 1); // always give a chance to metamethods
+        // OTOH, metamethods are already broken here with lua_rawlen()
+        // if you are on 5.2, use lua_len()
+
+        if (lua_isnil(lua_state, -1)) { // relative indexing for "locals"
+            a_size = i-1; // fix actual size (e.g. 4th nil means a_size==3)
+            break;
+        }
+
+        if (!lua_isnumber(lua_state, -1)) // optional check
+            return luaL_error(lua_state, "item %d invalid (number required, got %s)",
+                              i, luaL_typename(lua_state, -1));
+
+        lua_Integer b = lua_tointeger(lua_state, -1);
+
+        buf[i-1] = b; // Lua is 1-based, C is 0-based
+        lua_pop(lua_state, 1);
+    }
+
+    printf("size: %i\n\r",  a_size);
+
+    _graphics3d->setFaces(buf, a_size);
+
+    return 0;
+}
+
+int Lua_matrix_libs::lua_set3dFaceColors(lua_State *lua_state) {
+    luaL_checktype(lua_state, 1, LUA_TTABLE);
+    // let alone excessive arguments (idiomatic), or do:
+    lua_settop(lua_state, 1);
+
+    int a_size = lua_rawlen(lua_state, 1); // absolute indexing for arguments
+    uint8_t buf[a_size] = { 0 };
+
+    for (int i = 1; i <= a_size; i++) {
+        lua_pushinteger(lua_state, i);
+        lua_gettable(lua_state, 1); // always give a chance to metamethods
+        // OTOH, metamethods are already broken here with lua_rawlen()
+        // if you are on 5.2, use lua_len()
+
+        if (lua_isnil(lua_state, -1)) { // relative indexing for "locals"
+            a_size = i-1; // fix actual size (e.g. 4th nil means a_size==3)
+            break;
+        }
+
+        if (!lua_isnumber(lua_state, -1)) // optional check
+            return luaL_error(lua_state, "item %d invalid (number required, got %s)",
+                              i, luaL_typename(lua_state, -1));
+
+        lua_Integer b = lua_tointeger(lua_state, -1);
+
+        buf[i-1] = b; // Lua is 1-based, C is 0-based
+        lua_pop(lua_state, 1);
+    }
+
+    printf("size: %i\n\r",  a_size);
+
+    _graphics3d->setFaceColors(buf, a_size);
+
+    return 0;
 }
 
 int Lua_matrix_libs::lua_set3dRotation(lua_State *lua_state) {
@@ -161,26 +246,31 @@ int Lua_matrix_libs::lua_draw3dmesh(lua_State *lua_state) {
     return 0;
 }
 
-int Lua_matrix_libs::lua_drawCircle(lua_State *lua_state) {
+int Lua_matrix_libs::lua_drawAaCircle(lua_State *lua_state) {
     float x = luaL_checknumber(lua_state, 1);
     float y = luaL_checknumber(lua_state, 2);
     float rad = luaL_checknumber(lua_state, 3);
-    float rot = luaL_checknumber(lua_state, 4);
     uint8_t red = luaL_checkinteger(lua_state, 5);
     uint8_t green = luaL_checkinteger(lua_state, 6);
     uint8_t blue = luaL_checkinteger(lua_state, 7);
     int circle_points = 10;
 
-    //_matrix->drawLineWu(x, y, rad, rad, red, green, blue);
-
-    float prevX = 0;
+    float prevX = rad;
     float prevY = 0;
-    for (int i=0; i<circle_points+1; i++) {
-        float xr = rad*cos(((2*3.1415)/circle_points)*i + rot);
-        float yr = rad*sin(((2*3.1415)/circle_points)*i + rot);
+    for (int i=0; i<circle_points; i++) {
+        float xr = rad*cos(((2*3.141592)/circle_points)*i);
+        float yr = rad*sin(((2*3.141592)/circle_points)*i);
         _matrix->drawLineWu(x + prevX, y + prevY, x + xr, y + yr, red, green, blue);
         prevX = xr;
         prevY = yr;
+    }
+
+    for (float yi=-rad; yi<rad; yi+=1) {
+        for (float xi=-rad; xi<rad; xi+=1) {
+            if (xi*xi+yi*yi <= rad*rad) {
+                _matrix->drawPixel(floor(x+xi+0.5), floor(y+yi+0.5), red, green, blue);
+            }
+        }
     }
 
     return 1;

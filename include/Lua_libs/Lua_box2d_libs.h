@@ -28,6 +28,7 @@ private:
     static b2Body** _bodies;
 
     static int lua_createWorld(lua_State *lua_state);
+    static int lua_setGravity(lua_State *lua_state);
 
     static int lua_createStaticBody(lua_State *lua_state);
     static int lua_createDynamicBody(lua_State *lua_state);
@@ -38,6 +39,8 @@ private:
     
     static int lua_getPosition(lua_State *lua_state);
     static int lua_getRotation(lua_State *lua_state);
+
+    static int lua_drawCircle(lua_State *lua_state);
 
     static int lua_step(lua_State *lua_state);
 

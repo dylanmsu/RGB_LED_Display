@@ -71,6 +71,7 @@ int Lua_box2d_libs::lua_createDynamicBody(lua_State *lua_state) {
     b2BodyDef bodyDef;
     bodyDef.type = b2_dynamicBody;
     bodyDef.position.Set(position_x, position_y);
+    bodyDef.allowSleep = false;
     _bodies[num_bodies] = _world->CreateBody(&bodyDef);
 
     lua_pushinteger(lua_state, num_bodies);
@@ -173,12 +174,42 @@ int Lua_box2d_libs::lua_getPosition(lua_State *lua_state) {
     return 1;
 }
 
+int Lua_box2d_libs::lua_drawCircle(lua_State *lua_state) {
+    float x = luaL_checknumber(lua_state, 1);
+    float y = luaL_checknumber(lua_state, 2);
+    float rad = luaL_checknumber(lua_state, 3);
+    float rot = luaL_checknumber(lua_state, 4);
+    float r = luaL_checkinteger(lua_state, 5);
+    float g = luaL_checkinteger(lua_state, 6);
+    float b = luaL_checkinteger(lua_state, 7);
+
+    int circle_points = 10;
+
+    float prevX = 0;
+    float prevY = 0;
+    for (int i=0; i<circle_points+1; i++) {
+        float xr = rad*cos(((2*3.141592)/circle_points)*i + rot);
+        float yr = rad*sin(((2*3.141592)/circle_points)*i + rot);
+        _matrix->drawLineWu(x + prevX, y + prevY, x + xr, y + yr, r, g, b);
+        prevX = xr;
+        prevY = yr;
+    }
+    return 1;
+}
+
 int Lua_box2d_libs::lua_step(lua_State *lua_state) {
     float timeStep = luaL_checknumber(lua_state, 1);
     int velocityIterations = luaL_checkinteger(lua_state, 2);
     int positionIterations = luaL_checkinteger(lua_state, 3);
 
     _world->Step(timeStep, velocityIterations, positionIterations);
+    return 1;
+}
+
+int Lua_box2d_libs::lua_setGravity(lua_State *lua_state) {
+    float gravity_x = luaL_checknumber(lua_state, 1);
+    float gravity_y = luaL_checknumber(lua_state, 2);
+    _world->SetGravity(b2Vec2(gravity_x, gravity_y));
     return 1;
 }
 
@@ -191,6 +222,8 @@ const luaL_Reg Lua_box2d_libs::box2d_functions[] = {
     {"applyForceToCenter", lua_applyForceToCenter},
     {"getPosition", lua_getPosition},
     {"getRotation", lua_getRotation},
+    {"drawCircle", lua_drawCircle},
+    {"setGravity", lua_setGravity},
     {"step", lua_step},
     {NULL, NULL}
 };
