@@ -1,26 +1,36 @@
 #include <Arduino.h>
+
 #include <driver/sdmmc_defs.h>
 #include <driver/sdmmc_types.h>
 #include <driver/sdmmc_host.h>
-
 #include <driver/gpio.h>
 #include <driver/i2c.h>
-
 #include <sdmmc_cmd.h>
-
 #include <esp_vfs_fat.h>
 #include <nvs_flash.h>
 #include <esp_vfs.h>
 #include <string>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include <sys/param.h>
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "esp_netif.h"
+
+#include "lwip/err.h"
+#include "lwip/sockets.h"
+#include "lwip/sys.h"
+#include <lwip/netdb.h>
+
 #include "freertos/semphr.h"
 
-#include <WiFi.h>
-#include <WiFiClient.h>
-#include <WebServer.h>
-#include <ESPmDNS.h>
 #include <Update.h>
 
+// local files
 #include "pinmap.h"
 #include "MatrixPanel.h"
 #include "Graphics3D.h"
@@ -34,16 +44,22 @@ extern "C" {
     #include "lauxlib.h"
 }
 
-const char* host = "esp32";
-const char* ssid = "---";
-const char* password = "----";
+#define EXAMPLE_NETIF_DESC_STA "example_netif_sta"
+#define CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY 10
 
-WebServer server(80);
+#define ARTNET_DATA         0x50
+#define ARTNET_POLL         0x20
+#define ARTNET_POLL_REPLY   0x21
+#define ARTNET_PORT         6454
+#define ARTNET_HEADER       17
 
-#include "public.h"
+#define ARTNET_POLL         0x2000
+#define ARTNET_POLL_REPLY   0x2100
+#define ARTNET_DMX          0x5000
+#define ARTNET_SYNC         0x5200
 
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+const char* ssid = "ssid";
+const char* password = "password";
 
 static const char *TAG = "espressif"; // TAG for debug
 
@@ -70,8 +86,40 @@ std::vector<String> files;
 int file_count = 0;
 int current_file_idx = 0;
 
+static esp_netif_t *s_example_sta_netif = NULL;
+static SemaphoreHandle_t s_semph_get_ip_addrs = NULL;
+static int s_retry_num = 0;
+
+struct art_poll_reply {
+    uint8_t id[8];
+    uint8_t this_ip[4];
+    uint16_t opcode = ARTNET_POLL_REPLY;
+    uint16_t port_number = 0x1936;
+    uint16_t fw_version = 0;
+    uint8_t net_switch = 0;
+    uint8_t sub_switch = 0;
+    uint16_t oem = 0;
+    uint8_t ubea_version = 0;
+    uint8_t status1 = 0b11100000;
+    uint16_t esta_code = 0;
+    uint8_t short_name[18];
+    uint8_t long_name[64];
+    uint8_t node_report[64];
+    uint16_t num_ports = 0;
+    uint8_t port_types[4];
+    uint8_t good_input[4];
+    uint8_t good_output[4];
+    uint8_t sw_in[4];
+    uint8_t sw_out[4];
+    uint8_t style = 0;
+    uint8_t mac_addr[6];
+    uint8_t bind_ip[4];
+    uint8_t bind_idx = 0;
+    uint8_t status2 = 0b00001110;
+};
+
 float clamp_value(float num, float mini, float maxi){
-	return min(max(maxi,num),mini);
+    return min(max(maxi,num),mini);
 }
 
 void init_fat() {
@@ -128,7 +176,7 @@ static int lua_delay(lua_State *lua_state) {
     return 0;
 }
 
-static int lua_printText(lua_State *lua_state) {
+/*static int lua_printText(lua_State *lua_state) {
     int textsize = luaL_checkinteger(lua_state, 1);
     int cursorx = luaL_checkinteger(lua_state, 2);
     int cursory = luaL_checkinteger(lua_state, 3);
@@ -140,7 +188,7 @@ static int lua_printText(lua_State *lua_state) {
     matrixPanel.setTextColor(color);
     matrixPanel.print(text);
     return 0;
-}
+}*/
 
 void scrollString(String str, int height, uint16_t bg, uint16_t fg) {
     matrixPanel.fillRect(0,height,matrixPanel.getWidth(),7,0x0000);
@@ -183,26 +231,6 @@ void scrollString(String str, int height, uint16_t bg, uint16_t fg) {
 
     scrollString(files[selected], selected*8, 0xffff, 0x0000);
 }*/
-
-void run_lua_task(void * param) {
-    int script_id = *(int *)param;
-    String script = files[script_id];
-    String file = (MOUNT_POINT"/" + script + ".lua");
-
-    printf("file name: %i\r\n", (script_id));
-    fflush(stdout);
-
-    int error = luaL_dofile(lua_state, file.c_str());
-    String error_string = lua_tostring(lua_state, -1);
-
-    if (error != 0) {
-        printf("LUA ERROR: %s\r\n", error_string);
-        scrollString(error_string, 0, 0x0000, 0xffff);
-        lua_pop(lua_state, 1);
-    }
-
-    vTaskDelete(NULL);
-}
 
 /*void ButtonA_task(void *params)
 {
@@ -262,41 +290,18 @@ void ButtonB_task(void *params)
     gpio_isr_handler_add(pin, gpio_interrupt_handler, (void *)pin);
 }*/
 
-static int lua_sin8(lua_State *lua_state) {
-    int theta = luaL_checkinteger(lua_state, 1)%256;
+static int lua_sin16(lua_State *lua_state) {
+    int theta = luaL_checkinteger(lua_state, 1);
 
-    lua_pushinteger(lua_state, fast_sin8(theta));
+    lua_pushinteger(lua_state, fast_sin16(theta));
 
     return 1;
 }
 
-//https://github.com/FastLED/FastLED/blob/master/src/lib8tion/trig8.h
-static int lua_sin16(lua_State *lua_state) {
-    int theta = luaL_checkinteger(lua_state, 1);
+static int lua_sin8(lua_State *lua_state) {
+    int theta = luaL_checkinteger(lua_state, 1)%256;
 
-    static const uint16_t base[] = { 0, 6393, 12539, 18204, 23170, 27245, 30273, 32137 };
-    static const uint8_t slope[] = { 49, 48, 44, 38, 31, 23, 14, 4 };
-
-    uint16_t offset = (theta & 0x3FFF) >> 3; // 0..2047
-
-    if ( theta & 0x4000 ) {
-        offset = 2047 - offset;
-    }
-
-    uint8_t section = offset / 256; // 0..7
-    uint16_t b   = base[section];
-    uint8_t  m   = slope[section];
-
-    uint8_t secoffset8 = (uint8_t)(offset) / 2;
-
-    uint16_t mx = m * secoffset8;
-    int16_t  y  = mx + b;
-
-    if ( theta & 0x8000 ) {
-        y = -y;
-    }
-
-    lua_pushinteger(lua_state, y);
+    lua_pushinteger(lua_state, fast_sin8(theta));
 
     return 1;
 }
@@ -330,7 +335,7 @@ static esp_err_t i2c_master_read_slave_reg(i2c_port_t i2c_num, uint8_t i2c_addr,
     xSemaphoreGive( Mutex );
 
     return ret;
-}
+}//*/
 
 //https://github.com/espressif/esp-idf/issues/1807
 static esp_err_t i2c_master_write_slave_reg(i2c_port_t i2c_num, uint8_t i2c_addr, uint8_t i2c_reg, uint8_t* data_wr, size_t size)
@@ -352,7 +357,7 @@ static esp_err_t i2c_master_write_slave_reg(i2c_port_t i2c_num, uint8_t i2c_addr
     xSemaphoreGive( Mutex );
     
     return ret;
-}
+}//*/
 
 //https://github.com/espressif/esp-idf/issues/1807
 static void i2c_master_init()
@@ -387,14 +392,15 @@ static void i2c_master_init()
         fflush(stdout);
         i2c_cmd_link_delete(cmd);
     }
-    if(devices_found == 0) printf("\r\n-> no devices found\r\n");//*/
-}
+    if(devices_found == 0) printf("\r\n-> no devices found\r\n");*/
+}//*/
 
 // http://ww1.microchip.com/downloads/en/DeviceDoc/MCP7940N-Battery-Backed-I2C-RTCC-with-SRAM-20005010G.pdf
 int getSeconds() {
     uint8_t rx_data[2];
     ESP_ERROR_CHECK(i2c_master_read_slave_reg(I2C_NUM_0, 0x6F, 0x00, rx_data, 1));
-    return (rx_data[0] & 0x0F) + (((rx_data[0] >> 4) & 0x07)*10);
+    int seconds = (rx_data[0] & 0x0F) + (((rx_data[0] >> 4) & 0x07)*10);
+    return seconds;
 }
 
 int getMinutes() {
@@ -482,6 +488,7 @@ void list_files() {
     }
 }
 
+// initialize the i2c acellerometer
 int acellero_init() {
     uint8_t whoami[1] = { 0 };
     i2c_master_read_slave_reg(I2C_NUM_0, 0x1D,  0b00001111, whoami, 1);
@@ -505,7 +512,7 @@ float get_acellero_y() {
     uint8_t data[2] = { 0 };
     i2c_master_read_slave_reg(I2C_NUM_0, 0x1D,  0b00101010, data, 2);
     int intValue = (int16_t)(data[1] << 8) + data[0];
-    return intValue/16384.0f;
+    return -intValue/16384.0f;
 }
 
 float get_acellero_z() {
@@ -531,19 +538,16 @@ static int lua_getAcceleration_z(lua_State *lua_state) {
     float acelleration_z = get_acellero_z();
     lua_pushnumber(lua_state, acelleration_z);
     return 1;
-}
+}//*/
 
-void setup() {
-    i2c_master_init();
 
-    acellero_init();
+void run_lua_task(void * param) {
+    int script_id = *(int *)param;
+    String script = files[script_id];
+    String file = (MOUNT_POINT"/" + script + ".lua");
 
-    // Initialize rtc
-    //ESP_ERROR_CHECK(i2c_master_write_slave_reg(I2C_NUM_0, 0x6F, 0x00, &(0x80), 1));
-
-    init_fat();
-    
-    setCpuFrequencyMhz(240);
+    printf("file name: %i\r\n", (script_id));
+    fflush(stdout);
 
     // install libraries
     lua_state = luaL_newstate();
@@ -556,7 +560,7 @@ void setup() {
     lua_pop( lua_state, 1 );
 
     // install functions
-    lua_register(lua_state, "printText", (const lua_CFunction) &lua_printText);
+    //lua_register(lua_state, "printText", (const lua_CFunction) &lua_printText);
     lua_register(lua_state, "sin8", (const lua_CFunction) &lua_sin8);
     lua_register(lua_state, "sin16", (const lua_CFunction) &lua_sin16);
     lua_register(lua_state, "getSeconds", (const lua_CFunction) &lua_getSeconds);
@@ -569,89 +573,414 @@ void setup() {
     lua_register(lua_state, "getAccY", (const lua_CFunction) &lua_getAcceleration_y);
     lua_register(lua_state, "getAccZ", (const lua_CFunction) &lua_getAcceleration_z);
 
-    //WiFi.begin(ssid, password);
+    int error = luaL_dofile(lua_state, file.c_str());
+    String error_string = lua_tostring(lua_state, -1);
 
-    //while (WiFi.status() != WL_CONNECTED) {
-    //    delay(500);
-    //    Serial.print(".");
-    //}
-    //Serial.println("");
-    //Serial.print("Connected to ");
-    //Serial.println(ssid);
-    //Serial.print("IP address: ");
-    //Serial.println(WiFi.localIP());
+    if (error != 0) {
+        printf("LUA ERROR: %s\r\n", error_string);
+        scrollString(error_string, 0, 0x0000, 0xffff);
+        lua_pop(lua_state, 1);
+    }
 
-    /*use mdns for host name resolution*/
-    //if (!MDNS.begin(host)) { //http://esp32.local
-    //    Serial.println("Error setting up MDNS responder!");
-    //    while (1) {
-    //    delay(1000);
-    //    }
-    //}
+    vTaskDelete(NULL);
+}
+
+bool example_is_our_netif(const char *prefix, esp_netif_t *netif) {
+    return strncmp(prefix, esp_netif_get_desc(netif), strlen(prefix) - 1) == 0;
+}
+
+static void example_handler_on_sta_got_ip(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    s_retry_num = 0;
+    ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+    if (!example_is_our_netif(EXAMPLE_NETIF_DESC_STA, event->esp_netif)) {
+        return;
+    }
+    ESP_LOGI(TAG, "Got IPv4 event: Interface \"%s\" address: " IPSTR, esp_netif_get_desc(event->esp_netif), IP2STR(&event->ip_info.ip));
+    if (s_semph_get_ip_addrs) {
+        xSemaphoreGive(s_semph_get_ip_addrs);
+    } else {
+        ESP_LOGI(TAG, "- IPv4 address: " IPSTR ",", IP2STR(&event->ip_info.ip));
+    }
+}
+
+static void example_handler_on_wifi_disconnect(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    s_retry_num++;
+    if (s_retry_num > CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) {
+        ESP_LOGI(TAG, "WiFi Connect failed %d times, stop reconnect.", s_retry_num);
+        /* let example_wifi_sta_do_connect() return */
+        if (s_semph_get_ip_addrs) {
+            xSemaphoreGive(s_semph_get_ip_addrs);
+        }
+        return;
+    }
+    ESP_LOGI(TAG, "Wi-Fi disconnected, trying to reconnect...");
+    esp_err_t err = esp_wifi_connect();
+    if (err == ESP_ERR_WIFI_NOT_STARTED) {
+        return;
+    }
+    ESP_ERROR_CHECK(err);
+}
+
+static void example_handler_on_wifi_connect(void *esp_netif, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    ESP_LOGI(TAG, "Connected!");
+}
+
+void example_wifi_start(void) {
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    esp_netif_inherent_config_t esp_netif_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
+    // Warning: the interface desc is used in tests to capture actual connection details (IP, gw, mask)
+    esp_netif_config.if_desc = EXAMPLE_NETIF_DESC_STA;
+    esp_netif_config.route_prio = 128;
+    s_example_sta_netif = esp_netif_create_wifi(WIFI_IF_STA, &esp_netif_config);
+    esp_wifi_set_default_wifi_sta_handlers();
+
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+esp_err_t example_wifi_sta_do_disconnect(void) {
+    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &example_handler_on_wifi_disconnect));
+    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &example_handler_on_sta_got_ip));
+    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &example_handler_on_wifi_connect));
+
+    if (s_semph_get_ip_addrs) {
+        vSemaphoreDelete(s_semph_get_ip_addrs);
+    }
+
+    return esp_wifi_disconnect();
+}
+
+void example_wifi_stop(void) {
+    esp_err_t err = esp_wifi_stop();
+    if (err == ESP_ERR_WIFI_NOT_INIT) {
+        return;
+    }
+    ESP_ERROR_CHECK(err);
+    ESP_ERROR_CHECK(esp_wifi_deinit());
+    ESP_ERROR_CHECK(esp_wifi_clear_default_wifi_driver_and_handlers(s_example_sta_netif));
+    esp_netif_destroy(s_example_sta_netif);
+    s_example_sta_netif = NULL;
+}
+
+void example_wifi_shutdown(void) {
+    example_wifi_sta_do_disconnect();
+    example_wifi_stop();
+}
+
+esp_err_t example_wifi_sta_do_connect(wifi_config_t wifi_config, bool wait) {
+    if (wait) {
+        s_semph_get_ip_addrs = xSemaphoreCreateBinary();
+        if (s_semph_get_ip_addrs == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    s_retry_num = 0;
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &example_handler_on_wifi_disconnect, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &example_handler_on_sta_got_ip, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &example_handler_on_wifi_connect, s_example_sta_netif));
+
+    ESP_LOGI(TAG, "Connecting to %s...", wifi_config.sta.ssid);
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    esp_err_t ret = esp_wifi_connect();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi connect failed! ret:%x", ret);
+        return ret;
+    }
+    if (wait) {
+        ESP_LOGI(TAG, "Waiting for IP(s)");
+
+        xSemaphoreTake(s_semph_get_ip_addrs, portMAX_DELAY);
+
+        if (s_retry_num > CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) {
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t example_wifi_connect(void) {
+    ESP_LOGI(TAG, "Start example_connect.");
+    example_wifi_start();
+    wifi_config_t wifi_config = {};
+    strcpy((char*)wifi_config.sta.ssid, ssid);
+    strcpy((char*)wifi_config.sta.password, password);
+
+    return example_wifi_sta_do_connect(wifi_config, true);
+}
+
+void example_print_all_netif_ips(const char *prefix) {
+    // iterate over active interfaces, and print out IPs of "our" netifs
+    esp_netif_t *netif = NULL;
+    for (int i = 0; i < esp_netif_get_nr_of_ifs(); ++i) {
+        netif = esp_netif_next(netif);
+        if (example_is_our_netif(prefix, netif)) {
+            ESP_LOGI(TAG, "Connected to %s", esp_netif_get_desc(netif));
+            esp_netif_ip_info_t ip;
+            ESP_ERROR_CHECK(esp_netif_get_ip_info(netif, &ip));
+
+            ESP_LOGI(TAG, "- IPv4 address: " IPSTR ",", IP2STR(&ip.ip));
+        }
+    }
+}
+
+esp_err_t example_connect(void) {
+    if (example_wifi_connect() != ESP_OK) {
+        return ESP_FAIL;
+    }
+    ESP_ERROR_CHECK(esp_register_shutdown_handler(&example_wifi_shutdown));
+
+    example_print_all_netif_ips(EXAMPLE_NETIF_DESC_STA);
+
+    return ESP_OK;
+}
+
+void parseDMX(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
+    //printf("universe: %i, length: %i, sequence: %i\r\n", universe, length, sequence);
+    for (int j=0; j<7; j++) {
+        if (universe == j) {
+            for (int i=0; i<32*5; i++) {
+                matrixPanel.drawPixel(i%32, 5*j + i/32, data[i*3 + 0], data[i*3 + 1], data[i*3 + 2]);
+            }
+            
+            matrixPanel.drawBuffer();
+        }
+    }
+}
+
+static void udp_server_task(void *pvParameters) {
+    uint8_t rx_buffer[530];
+    char addr_str[128];
+    int addr_family = (int)pvParameters;
+    int ip_protocol = 0;
+    struct sockaddr_in6 dest_addr;
+
+    while (1) {
+
+        if (addr_family == AF_INET) {
+            struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
+            dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
+            dest_addr_ip4->sin_family = AF_INET;
+            dest_addr_ip4->sin_port = htons(ARTNET_PORT);
+            ip_protocol = IPPROTO_IP;
+        } else if (addr_family == AF_INET6) {
+            bzero(&dest_addr.sin6_addr.un, sizeof(dest_addr.sin6_addr.un));
+            dest_addr.sin6_family = AF_INET6;
+            dest_addr.sin6_port = htons(ARTNET_PORT);
+            ip_protocol = IPPROTO_IPV6;
+        }
+
+        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
+        if (sock < 0) {
+            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+            break;
+        }
+        ESP_LOGI(TAG, "Socket created");
+
+        int enable = 1;
+        lwip_setsockopt(sock, IPPROTO_IP, IP_PKTINFO, &enable, sizeof(enable));
+
+        if (addr_family == AF_INET6) {
+            // Note that by default IPV6 binds to both protocols, it is must be disabled
+            // if both protocols used at the same time (used in CI)
+            int opt = 1;
+            setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+            setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &opt, sizeof(opt));
+        }
+
+        // Set timeout
+        struct timeval timeout;
+        timeout.tv_sec = 10;
+        timeout.tv_usec = 0;
+        setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+
+        int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        if (err < 0) {
+            ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+        }
+        ESP_LOGI(TAG, "Socket bound, port %d", ARTNET_PORT);
+
+        struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
+        socklen_t socklen = sizeof(source_addr);
+
+        struct iovec iov;
+        struct msghdr msg;
+        struct cmsghdr *cmsgtmp;
+        u8_t cmsg_buf[CMSG_SPACE(sizeof(struct in_pktinfo))];
+
+        iov.iov_base = rx_buffer;
+        iov.iov_len = sizeof(rx_buffer);
+        msg.msg_control = cmsg_buf;
+        msg.msg_controllen = sizeof(cmsg_buf);
+        msg.msg_flags = 0;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_name = (struct sockaddr *)&source_addr;
+        msg.msg_namelen = socklen;
+
+        while (1) {
+            //ESP_LOGI(TAG, "Waiting for data");
+            int len = recvmsg(sock, &msg, 0);
+            // Error occurred during receiving
+            if (len < 0) {
+                ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+                break;
+            }
+            // Data received
+            else {
+                // Get the sender's ip address as string
+                //if (source_addr.ss_family == PF_INET) {
+                    //inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
+                    /*for ( cmsgtmp = CMSG_FIRSTHDR(&msg); cmsgtmp != NULL; cmsgtmp = CMSG_NXTHDR(&msg, cmsgtmp) ) {
+                        if ( cmsgtmp->cmsg_level == IPPROTO_IP && cmsgtmp->cmsg_type == IP_PKTINFO ) {
+                            struct in_pktinfo *pktinfo;
+                            pktinfo = (struct in_pktinfo*)CMSG_DATA(cmsgtmp);
+                            ESP_LOGI(TAG, "dest ip: %s\n", inet_ntoa(pktinfo->ipi_addr));
+                        }
+                    }*/
+                //} else if (source_addr.ss_family == PF_INET6) {
+                //    inet6_ntoa_r(((struct sockaddr_in6 *)&source_addr)->sin6_addr, addr_str, sizeof(addr_str) - 1);
+                //}
+
+                uint16_t uniSize;
+
+                if ( rx_buffer[0] == 'A' && rx_buffer[1] == 'r' && rx_buffer[2] == 't' && rx_buffer[3] == '-' && rx_buffer[4] == 'N' && rx_buffer[5] == 'e' && rx_buffer[6] == 't') {
+                    int opcode = rx_buffer[8] | rx_buffer[9] << 8;
+
+                    if (opcode == ARTNET_DMX)
+                    {
+                        int sequence = rx_buffer[12];
+                        int subUni = rx_buffer[14];
+                        int net = rx_buffer[15];
+                        int universe = subUni + net<<8;
+                        int dmxDataLength = rx_buffer[17] + rx_buffer[16] << 8;
+                        parseDMX(subUni, dmxDataLength, sequence, rx_buffer + (ARTNET_HEADER + 1));
+                    }
+
+                    if (opcode == ARTNET_POLL)
+                    {
+                        // https://art-net.org.uk/how-it-works/discovery-packets/artpollreply/
+                        printf("poll\r\n");
+                        //uint8_t poll_reply[214] = {0};
+                        //struct art_poll_reply reply;
+
+                        //memcpy(reply.id, "Art-Net", 8);
+
+                        //uint64_t this_ip_adress = (uint64_t)(struct sockaddr_in *)&dest_addr;
+                        //reply.this_ip[0] = (this_ip_adress & 0xFF000000L) >> 24;
+                        //reply.this_ip[1] = (this_ip_adress & 0x00FF0000L) >> 16;
+                        //reply.this_ip[2] = (this_ip_adress & 0x0000FF00L) >> 8;
+                        //reply.this_ip[3] = (this_ip_adress & 0x000000FFL) >> 0;
+
+                        //int err = sendto(sock, poll_reply, sizeof(poll_reply), 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+                        //if (err < 0) {
+                        //    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                        //    break;
+                        //}
+                    }
+                    if (opcode == ARTNET_SYNC)
+                    {
+                        printf("poll\r\n");
+                    }
+                }
+
+                /*int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+                if (err < 0) {
+                    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                    break;
+                }*/
+            }
+        }
+
+        if (sock != -1) {
+            ESP_LOGE(TAG, "Shutting down socket and restarting...");
+            shutdown(sock, 0);
+            close(sock);
+        }
+    }
+    vTaskDelete(NULL);
+}
+
+void setup() {
+    i2c_master_init();
+
+    acellero_init();
+
+    // Initialize rtc
+    if (getSeconds() == 0) {
+        uint8_t rtc_config[1] = {0x80};
+        ESP_ERROR_CHECK(i2c_master_write_slave_reg(I2C_NUM_0, 0x6F, 0x00, rtc_config, 1));
+    }
+
+    init_fat();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    ESP_ERROR_CHECK(example_connect());
     
-    //Serial.println("mDNS responder started");
-    /*return index page which is stored in serverIndex */
-    //server.on("/", HTTP_GET, []() {
-    //    server.sendHeader("Connection", "close");
-    //    server.send(200, "text/html", loginIndex);
-    //});
-    //server.on("/serverIndex", HTTP_GET, []() {
-    //    server.sendHeader("Connection", "close");
-    //    server.send(200, "text/html", serverIndex);
-    //});
-    ///*handling uploading firmware file */
-    //server.on("/update", HTTP_POST, []() {
-    //    server.sendHeader("Connection", "close");
-    //    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
-    //    ESP.restart();
-    //}, []() {
-    //    HTTPUpload& upload = server.upload();
-    //    if (upload.status == UPLOAD_FILE_START) {
-    //        Serial.printf("Update: %s\n", upload.filename.c_str());
-    //        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { //start with max available size
-    //            Update.printError(Serial);
-    //        }
-    //    } 
-    //    else if (upload.status == UPLOAD_FILE_WRITE) {
-    //        /* flashing firmware to ESP*/
-    //        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-    //            Update.printError(Serial);
-    //        }
-    //    } 
-    //    else if (upload.status == UPLOAD_FILE_END) {
-    //        if (Update.end(true)) { //true to set the size to the current progress
-    //            Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
-    //        } else {
-    //            Update.printError(Serial);
-    //        }
-    //    }
-    //});
-    //server.begin();
+    setCpuFrequencyMhz(240);
+
+    /*lua_state = luaL_newstate();
+    luaL_requiref( lua_state, "math", luaopen_math, 1 );
+    luaL_requiref( lua_state, "table", luaopen_table, 1 );
+    luaL_requiref( lua_state, "base", luaopen_base, 1 );
+    luaL_requiref( lua_state, "string", luaopen_string, 1 );
+    luaL_requiref( lua_state, "matrix", lua_matrix_libs.luaopen_matrix_lib, 1 );
+    luaL_requiref( lua_state, "physics", lua_box2d_libs.luaopen_box2d_lib, 1 );
+    lua_pop( lua_state, 1 );
+
+    // install functions
+    //lua_register(lua_state, "printText", (const lua_CFunction) &lua_printText);
+    lua_register(lua_state, "sin8", (const lua_CFunction) &lua_sin8);
+    lua_register(lua_state, "sin16", (const lua_CFunction) &lua_sin16);
+    lua_register(lua_state, "getSeconds", (const lua_CFunction) &lua_getSeconds);
+    lua_register(lua_state, "getMinutes", (const lua_CFunction) &lua_getMinutes);
+    lua_register(lua_state, "getHours", (const lua_CFunction) &lua_getHours);
+    lua_register(lua_state, "delay", (const lua_CFunction) &lua_delay);
+    lua_register(lua_state, "random", (const lua_CFunction) &lua_getRandom);
+    lua_register(lua_state, "setInterval", (const lua_CFunction) &lua_setInterval);
+    lua_register(lua_state, "getAccX", (const lua_CFunction) &lua_getAcceleration_x);
+    lua_register(lua_state, "getAccY", (const lua_CFunction) &lua_getAcceleration_y);
+    lua_register(lua_state, "getAccZ", (const lua_CFunction) &lua_getAcceleration_z);//*/
 
     list_files();
 
+    xTaskCreate(udp_server_task, "udp_server", 4096, (void*)AF_INET, 5, NULL);
+
+    //current_file_idx = 0;
+    //xTaskCreate(&run_lua_task,"lua task", 4096*8, &current_file_idx, 0, &lua_task_handle);
+    
     // cycle through all scripts
-    //while (true) {
-        //for (int i=0; i<file_count; i++) {
-            //current_file_idx = 0;
-            //printf("found file: %s.lua\r\n", files[0]);
+    /*while (true) {
+        for (int i=0; i<file_count; i++) {
+            current_file_idx = i;
+            printf("found file: %s.lua\r\n", files[current_file_idx]);
 
-            //xTaskCreate(&run_lua_task,"lua task", 4096*16, &current_file_idx, 0, &lua_task_handle);
-            //delay(10000);
-            //vTaskDelete(lua_task_handle);
-            //delay(1000);
-        //}
-    //}
+            xTaskCreate(&run_lua_task,"lua task", 4096*20, &current_file_idx, 0, &lua_task_handle);
+            vTaskDelay(10000 / portTICK_PERIOD_MS);
+            matrixPanel.fillScreen(0x0000);
+            matrixPanel.drawBuffer();
+            esp_restart();
+        }
+    }//*/
 
-    String script = files[0];
+    //matrixPanel.drawPixel(16,16,20,0,255);
+
+    /*String script = files[0];
     String file = (MOUNT_POINT"/" + script + ".lua");
     printf("file: %s", file.c_str());
     fflush(stdout);
+
+    //String script = ""
+    //"";
 
     int error = luaL_dofile(lua_state, file.c_str());
 
     if (error != 0) {
         printf("LUA ERROR: %s\r\n", lua_tostring(lua_state, -1));
+        matrixPanel.fillScreen(0x0000);
         //scrollString(error_string, 0, 0x0000, 0xffff);
         lua_pop(lua_state, 1);
     }//*/
@@ -670,6 +999,6 @@ void setup() {
 }
 
 void loop() {
-    //server.handleClient();
-    //delay(1);
+    matrixPanel.drawBuffer();
+    delay(100);
 }

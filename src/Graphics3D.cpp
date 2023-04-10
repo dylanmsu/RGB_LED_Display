@@ -159,7 +159,7 @@ void Graphics3D::calculateNormals() {
 }
 
 void Graphics3D::drawSolid(){
-	const int cx = matrixPanel->getWidth()/2;
+    const int cx = matrixPanel->getWidth()/2;
     const int cy = matrixPanel->getHeight()/2;
     
     int buf[face_count] = {0};
@@ -167,7 +167,7 @@ void Graphics3D::drawSolid(){
     
     // calculate z-buffer on every frame
     Zarr(transformed_vertices,faces,face_count,Zarray); //gets array of all the z positions of the faces and dump them in "Zarray"
-	sort(Zarray,face_count,buf);        //get sorted indices of the z array to apply the "painter’s algorithm"
+    sort(Zarray,face_count,buf);        //get sorted indices of the z array to apply the "painter’s algorithm"
 
     // used to store the 2d projected 3d coordinates
     float px[VERTS_PER_FACE] = {0};
@@ -190,7 +190,7 @@ void Graphics3D::drawSolid(){
     // iterate over every face
     for (int j=0;j<face_count;j++){
 		
-		int i = buf[j];
+        int i = buf[j];
 
         // here is where the 3d coordinates are mapped onto a 2d xz surface
         for (int k=0; k<VERTS_PER_FACE; k++) {
@@ -206,11 +206,32 @@ void Graphics3D::drawSolid(){
         // the following code are for the shaders
         //http://www.opengl-tutorial.org/beginners-tutorials/tutorial-8-basic-shading/
 
-        // diffuse color of the 3d face
-        float diffuseColor[3] = {face_colors[i*3 + 0], face_colors[i*3 + 1], face_colors[i*3 + 2]};
+        float diffuseColor[3] = {0};
+        float ambientColor[3] = {0};
 
-        // color of the ambient licht
-        float ambientColor[3] = {face_colors[i*3 + 0]/10, face_colors[i*3 + 1]/10, face_colors[i*3 + 2]/10};
+        if (face_colors_valid) {
+            // diffuse color of the 3d face
+            diffuseColor[0] = face_colors[i*3 + 0];
+            diffuseColor[1] = face_colors[i*3 + 1];
+            diffuseColor[2] = face_colors[i*3 + 2];
+
+            // color of the ambient licht
+            ambientColor[0] = face_colors[i*3 + 0]/10;
+            ambientColor[1] = face_colors[i*3 + 1]/10;
+            ambientColor[2] = face_colors[i*3 + 2]/10;
+        } else {
+            // diffuse color of the 3d face
+            diffuseColor[0] = 1.0f;
+            diffuseColor[1] = 1.0f;
+            diffuseColor[2] = 1.0f;
+
+            // color of the ambient licht
+            ambientColor[0] = 0.1f;
+            ambientColor[1] = 0.1f;
+            ambientColor[2] = 0.1f;
+        }
+
+        
         
         // if normals are precalculated, get the normals, otherwise calculate them
         float faceNormal[3] = {0};
@@ -286,18 +307,31 @@ void Graphics3D::setVertices(float *verts, int size) {
 void Graphics3D::setFaces(int *quats, int size) {
     faces = (int *) realloc(faces, sizeof(int *)*size);
 
-    for (int i=0; i<size; i++) {
-        faces[i] = quats[i];
+    if (faces == NULL) {
+        printf("Could not allocate required memory.");
     }
+    else {
+        for (int i=0; i<size; i++) {
+            faces[i] = quats[i];
+        }
 
-    face_count = size/4;
+        face_count = size/4;
+    }
 }
 
 void Graphics3D::setFaceColors(uint8_t *colors, int size) {
-    face_colors = (float *) realloc(face_colors, sizeof(float *)*size);
+    if (size == face_count) {
+        face_colors = (float *) realloc(face_colors, sizeof(float *)*size);
 
-    for (int i=0; i<size; i++) {
-        face_colors[i] = clamp(colors[i]/255.0f,1,0);
+        for (int i=0; i<size; i++) {
+            face_colors[i] = clamp(colors[i]/255.0f,1,0);
+        }
+
+        face_colors_valid = true;
+    }
+    else
+    {
+        face_colors_valid = false;
     }
 }
 

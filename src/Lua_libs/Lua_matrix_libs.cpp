@@ -112,6 +112,7 @@ int Lua_matrix_libs::lua_setBrightness(lua_State *lua_state) {
     return 1;
 }
 
+// https://stackoverflow.com/questions/25940366/passing-array-to-c-as-argument-in-the-stack
 int Lua_matrix_libs::lua_set3dVertices(lua_State *lua_state) {
     luaL_checktype(lua_state, 1, LUA_TTABLE);
     // let alone excessive arguments (idiomatic), or do:
@@ -141,13 +142,12 @@ int Lua_matrix_libs::lua_set3dVertices(lua_State *lua_state) {
         lua_pop(lua_state, 1);
     }
 
-    printf("size: %i\n\r",  a_size);
-
     _graphics3d->setVertices(buf, a_size);
 
     return 0;
 }
 
+// https://stackoverflow.com/questions/25940366/passing-array-to-c-as-argument-in-the-stack
 int Lua_matrix_libs::lua_set3dFaces(lua_State *lua_state) {
     luaL_checktype(lua_state, 1, LUA_TTABLE);
     // let alone excessive arguments (idiomatic), or do:
@@ -177,13 +177,12 @@ int Lua_matrix_libs::lua_set3dFaces(lua_State *lua_state) {
         lua_pop(lua_state, 1);
     }
 
-    printf("size: %i\n\r",  a_size);
-
     _graphics3d->setFaces(buf, a_size);
 
     return 0;
 }
 
+// https://stackoverflow.com/questions/25940366/passing-array-to-c-as-argument-in-the-stack
 int Lua_matrix_libs::lua_set3dFaceColors(lua_State *lua_state) {
     luaL_checktype(lua_state, 1, LUA_TTABLE);
     // let alone excessive arguments (idiomatic), or do:
@@ -212,8 +211,6 @@ int Lua_matrix_libs::lua_set3dFaceColors(lua_State *lua_state) {
         buf[i-1] = b; // Lua is 1-based, C is 0-based
         lua_pop(lua_state, 1);
     }
-
-    printf("size: %i\n\r",  a_size);
 
     _graphics3d->setFaceColors(buf, a_size);
 

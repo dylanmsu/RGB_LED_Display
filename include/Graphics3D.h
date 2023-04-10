@@ -25,6 +25,8 @@ private:
     float *transformed_vertices;
     float *transformed_face_normals;
 
+    bool face_colors_valid = false;
+
     int face_count;
     int vert_count;
 

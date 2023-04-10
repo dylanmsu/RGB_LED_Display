@@ -9,12 +9,12 @@ function draw()
 
     -- draw the clock marks
     for p=0,11 do
-        x_p = math.cos(p*(math.pi/6.0))*15.5 + cx
-        y_p = math.sin(p*(math.pi/6.0))*15.5 + cy
+        x_p = math.cos(p*(math.pi/6.0))*15 + cx
+        y_p = math.sin(p*(math.pi/6.0))*15 + cy
         matrix.drawPixel(math.floor(x_p), math.floor(y_p), 64, 64, 64)
-        matrix.drawPixel(math.floor(x_p), math.ceil(y_p), 64, 64, 64)
-        matrix.drawPixel(math.ceil(x_p), math.floor(y_p), 64, 64, 64)
-        matrix.drawPixel(math.ceil(x_p), math.ceil(y_p), 64, 64, 64)
+        matrix.drawPixel(math.floor(x_p), math.floor(y_p)+1, 64, 64, 64)
+        matrix.drawPixel(math.floor(x_p)+1, math.floor(y_p), 64, 64, 64)
+        matrix.drawPixel(math.floor(x_p)+1, math.floor(y_p)+1, 64, 64, 64)
 
     end
 
@@ -42,13 +42,15 @@ function draw()
     matrix.drawPixel(math.ceil(cx), math.ceil(cy), 64, 64, 64)
 end
 
+draw()
+
 function run()
     seconds = getSeconds()
     if (prev_seconds ~= seconds) then
         prev_seconds = seconds
         draw()
     end
-    matrix.draw()
+    return 1
 end
 
 setInterval(50)

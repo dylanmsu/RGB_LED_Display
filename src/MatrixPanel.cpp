@@ -20,12 +20,15 @@ MatrixPanel::MatrixPanel(int width, int height)
     mxconfig.driver   = HUB75_I2S_CFG::SHIFTREG;
 
     dma_display = new MatrixPanel_I2S_DMA(mxconfig);
-    dma_display->begin();
+
+    if( not dma_display->begin() )
+      Serial.println("****** !KABOOM! I2S memory allocation failed ***********");
+
     dma_display->setBrightness8(4); //can be changed later by the lua script
     fillScreen(0x0000);
 
-    //OneEightMatrixDisplay = new VirtualMatrixPanel((*dma_display), 1, 1, _width, _height, true, false);
-    //OneEightMatrixDisplay->setPhysicalPanelScanRate(FOUR_SCAN_16PX_HIGH);
+    OneEightMatrixDisplay = new VirtualMatrixPanel((*dma_display), 1, 1, _width, _height);
+    OneEightMatrixDisplay->setPhysicalPanelScanRate(FOUR_SCAN_16PX_HIGH);
     //OneEightMatrixDisplay->setPhysicalPanelScanRate(ONE_EIGHT_16);
 }
 
@@ -259,6 +262,7 @@ void MatrixPanel::drawPixelHSV(int16_t x, int16_t y, float H, float S,float V){
 
     drawPixel(x, y, R, G, B);
 }
+
 
 void MatrixPanel::fillQuat(float px[4], float py[4], uint8_t r, uint8_t g, uint8_t b, float alpha){
 	int IMG_TOP = min(min(min(py[0],py[1]),py[2]),py[3]);
