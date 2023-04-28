@@ -14,13 +14,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include <sys/param.h>
-#include "esp_system.h"
-#include "esp_wifi.h"
-#include "esp_event.h"
-#include "esp_log.h"
-#include "esp_netif.h"
-
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
@@ -37,6 +30,7 @@
 #include "Lua_libs/Lua_matrix_libs.h"
 #include "Lua_libs/Lua_box2d_libs.h"
 #include "FastMath.h"
+#include "Network/WifiConnect.h"
 
 extern "C" {
     #include "lua.h"
@@ -48,8 +42,6 @@ extern "C" {
 #define CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY 10
 
 #define ARTNET_DATA         0x50
-#define ARTNET_POLL         0x20
-#define ARTNET_POLL_REPLY   0x21
 #define ARTNET_PORT         6454
 #define ARTNET_HEADER       17
 
@@ -58,14 +50,12 @@ extern "C" {
 #define ARTNET_DMX          0x5000
 #define ARTNET_SYNC         0x5200
 
-const char* ssid = "ssid";
-const char* password = "password";
-
 static const char *TAG = "espressif"; // TAG for debug
 
 lua_State *lua_state;
 MatrixPanel matrixPanel(32,32);
 Graphics3D graphics3D(&matrixPanel);
+WifiConnect wifi;
 
 Lua_matrix_libs lua_matrix_libs(lua_state, &matrixPanel, &graphics3D);
 Lua_box2d_libs lua_box2d_libs(lua_state, &matrixPanel);
@@ -85,10 +75,6 @@ int buttonCount = 0;
 std::vector<String> files;
 int file_count = 0;
 int current_file_idx = 0;
-
-static esp_netif_t *s_example_sta_netif = NULL;
-static SemaphoreHandle_t s_semph_get_ip_addrs = NULL;
-static int s_retry_num = 0;
 
 struct art_poll_reply {
     uint8_t id[8];
@@ -585,158 +571,6 @@ void run_lua_task(void * param) {
     vTaskDelete(NULL);
 }
 
-bool example_is_our_netif(const char *prefix, esp_netif_t *netif) {
-    return strncmp(prefix, esp_netif_get_desc(netif), strlen(prefix) - 1) == 0;
-}
-
-static void example_handler_on_sta_got_ip(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    s_retry_num = 0;
-    ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-    if (!example_is_our_netif(EXAMPLE_NETIF_DESC_STA, event->esp_netif)) {
-        return;
-    }
-    ESP_LOGI(TAG, "Got IPv4 event: Interface \"%s\" address: " IPSTR, esp_netif_get_desc(event->esp_netif), IP2STR(&event->ip_info.ip));
-    if (s_semph_get_ip_addrs) {
-        xSemaphoreGive(s_semph_get_ip_addrs);
-    } else {
-        ESP_LOGI(TAG, "- IPv4 address: " IPSTR ",", IP2STR(&event->ip_info.ip));
-    }
-}
-
-static void example_handler_on_wifi_disconnect(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    s_retry_num++;
-    if (s_retry_num > CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) {
-        ESP_LOGI(TAG, "WiFi Connect failed %d times, stop reconnect.", s_retry_num);
-        /* let example_wifi_sta_do_connect() return */
-        if (s_semph_get_ip_addrs) {
-            xSemaphoreGive(s_semph_get_ip_addrs);
-        }
-        return;
-    }
-    ESP_LOGI(TAG, "Wi-Fi disconnected, trying to reconnect...");
-    esp_err_t err = esp_wifi_connect();
-    if (err == ESP_ERR_WIFI_NOT_STARTED) {
-        return;
-    }
-    ESP_ERROR_CHECK(err);
-}
-
-static void example_handler_on_wifi_connect(void *esp_netif, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    ESP_LOGI(TAG, "Connected!");
-}
-
-void example_wifi_start(void) {
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    esp_netif_inherent_config_t esp_netif_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
-    // Warning: the interface desc is used in tests to capture actual connection details (IP, gw, mask)
-    esp_netif_config.if_desc = EXAMPLE_NETIF_DESC_STA;
-    esp_netif_config.route_prio = 128;
-    s_example_sta_netif = esp_netif_create_wifi(WIFI_IF_STA, &esp_netif_config);
-    esp_wifi_set_default_wifi_sta_handlers();
-
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-}
-
-esp_err_t example_wifi_sta_do_disconnect(void) {
-    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &example_handler_on_wifi_disconnect));
-    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &example_handler_on_sta_got_ip));
-    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &example_handler_on_wifi_connect));
-
-    if (s_semph_get_ip_addrs) {
-        vSemaphoreDelete(s_semph_get_ip_addrs);
-    }
-
-    return esp_wifi_disconnect();
-}
-
-void example_wifi_stop(void) {
-    esp_err_t err = esp_wifi_stop();
-    if (err == ESP_ERR_WIFI_NOT_INIT) {
-        return;
-    }
-    ESP_ERROR_CHECK(err);
-    ESP_ERROR_CHECK(esp_wifi_deinit());
-    ESP_ERROR_CHECK(esp_wifi_clear_default_wifi_driver_and_handlers(s_example_sta_netif));
-    esp_netif_destroy(s_example_sta_netif);
-    s_example_sta_netif = NULL;
-}
-
-void example_wifi_shutdown(void) {
-    example_wifi_sta_do_disconnect();
-    example_wifi_stop();
-}
-
-esp_err_t example_wifi_sta_do_connect(wifi_config_t wifi_config, bool wait) {
-    if (wait) {
-        s_semph_get_ip_addrs = xSemaphoreCreateBinary();
-        if (s_semph_get_ip_addrs == NULL) {
-            return ESP_ERR_NO_MEM;
-        }
-    }
-    s_retry_num = 0;
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &example_handler_on_wifi_disconnect, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &example_handler_on_sta_got_ip, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &example_handler_on_wifi_connect, s_example_sta_netif));
-
-    ESP_LOGI(TAG, "Connecting to %s...", wifi_config.sta.ssid);
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    esp_err_t ret = esp_wifi_connect();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi connect failed! ret:%x", ret);
-        return ret;
-    }
-    if (wait) {
-        ESP_LOGI(TAG, "Waiting for IP(s)");
-
-        xSemaphoreTake(s_semph_get_ip_addrs, portMAX_DELAY);
-
-        if (s_retry_num > CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) {
-            return ESP_FAIL;
-        }
-    }
-    return ESP_OK;
-}
-
-esp_err_t example_wifi_connect(void) {
-    ESP_LOGI(TAG, "Start example_connect.");
-    example_wifi_start();
-    wifi_config_t wifi_config = {};
-    strcpy((char*)wifi_config.sta.ssid, ssid);
-    strcpy((char*)wifi_config.sta.password, password);
-
-    return example_wifi_sta_do_connect(wifi_config, true);
-}
-
-void example_print_all_netif_ips(const char *prefix) {
-    // iterate over active interfaces, and print out IPs of "our" netifs
-    esp_netif_t *netif = NULL;
-    for (int i = 0; i < esp_netif_get_nr_of_ifs(); ++i) {
-        netif = esp_netif_next(netif);
-        if (example_is_our_netif(prefix, netif)) {
-            ESP_LOGI(TAG, "Connected to %s", esp_netif_get_desc(netif));
-            esp_netif_ip_info_t ip;
-            ESP_ERROR_CHECK(esp_netif_get_ip_info(netif, &ip));
-
-            ESP_LOGI(TAG, "- IPv4 address: " IPSTR ",", IP2STR(&ip.ip));
-        }
-    }
-}
-
-esp_err_t example_connect(void) {
-    if (example_wifi_connect() != ESP_OK) {
-        return ESP_FAIL;
-    }
-    ESP_ERROR_CHECK(esp_register_shutdown_handler(&example_wifi_shutdown));
-
-    example_print_all_netif_ips(EXAMPLE_NETIF_DESC_STA);
-
-    return ESP_OK;
-}
-
 void parseDMX(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
     //printf("universe: %i, length: %i, sequence: %i\r\n", universe, length, sequence);
     for (int j=0; j<7; j++) {
@@ -759,18 +593,11 @@ static void udp_server_task(void *pvParameters) {
 
     while (1) {
 
-        if (addr_family == AF_INET) {
-            struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
-            dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
-            dest_addr_ip4->sin_family = AF_INET;
-            dest_addr_ip4->sin_port = htons(ARTNET_PORT);
-            ip_protocol = IPPROTO_IP;
-        } else if (addr_family == AF_INET6) {
-            bzero(&dest_addr.sin6_addr.un, sizeof(dest_addr.sin6_addr.un));
-            dest_addr.sin6_family = AF_INET6;
-            dest_addr.sin6_port = htons(ARTNET_PORT);
-            ip_protocol = IPPROTO_IPV6;
-        }
+        struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
+        dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
+        dest_addr_ip4->sin_family = AF_INET;
+        dest_addr_ip4->sin_port = htons(ARTNET_PORT);
+        ip_protocol = IPPROTO_IP;
 
         int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
         if (sock < 0) {
@@ -781,14 +608,6 @@ static void udp_server_task(void *pvParameters) {
 
         int enable = 1;
         lwip_setsockopt(sock, IPPROTO_IP, IP_PKTINFO, &enable, sizeof(enable));
-
-        if (addr_family == AF_INET6) {
-            // Note that by default IPV6 binds to both protocols, it is must be disabled
-            // if both protocols used at the same time (used in CI)
-            int opt = 1;
-            setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-            setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &opt, sizeof(opt));
-        }
 
         // Set timeout
         struct timeval timeout;
@@ -831,19 +650,14 @@ static void udp_server_task(void *pvParameters) {
             // Data received
             else {
                 // Get the sender's ip address as string
-                //if (source_addr.ss_family == PF_INET) {
-                    //inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
-                    /*for ( cmsgtmp = CMSG_FIRSTHDR(&msg); cmsgtmp != NULL; cmsgtmp = CMSG_NXTHDR(&msg, cmsgtmp) ) {
-                        if ( cmsgtmp->cmsg_level == IPPROTO_IP && cmsgtmp->cmsg_type == IP_PKTINFO ) {
-                            struct in_pktinfo *pktinfo;
-                            pktinfo = (struct in_pktinfo*)CMSG_DATA(cmsgtmp);
-                            ESP_LOGI(TAG, "dest ip: %s\n", inet_ntoa(pktinfo->ipi_addr));
-                        }
-                    }*/
-                //} else if (source_addr.ss_family == PF_INET6) {
-                //    inet6_ntoa_r(((struct sockaddr_in6 *)&source_addr)->sin6_addr, addr_str, sizeof(addr_str) - 1);
-                //}
-
+                //inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
+                /*for ( cmsgtmp = CMSG_FIRSTHDR(&msg); cmsgtmp != NULL; cmsgtmp = CMSG_NXTHDR(&msg, cmsgtmp) ) {
+                    if ( cmsgtmp->cmsg_level == IPPROTO_IP && cmsgtmp->cmsg_type == IP_PKTINFO ) {
+                        struct in_pktinfo *pktinfo;
+                        pktinfo = (struct in_pktinfo*)CMSG_DATA(cmsgtmp);
+                        ESP_LOGI(TAG, "dest ip: %s\n", inet_ntoa(pktinfo->ipi_addr));
+                    }
+                }*/
                 uint16_t uniSize;
 
                 if ( rx_buffer[0] == 'A' && rx_buffer[1] == 'r' && rx_buffer[2] == 't' && rx_buffer[3] == '-' && rx_buffer[4] == 'N' && rx_buffer[5] == 'e' && rx_buffer[6] == 't') {
@@ -882,7 +696,7 @@ static void udp_server_task(void *pvParameters) {
                     }
                     if (opcode == ARTNET_SYNC)
                     {
-                        printf("poll\r\n");
+                        printf("sync\r\n");
                     }
                 }
 
@@ -916,9 +730,9 @@ void setup() {
 
     init_fat();
 
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_ERROR_CHECK(example_connect());
+    //ESP_ERROR_CHECK(esp_netif_init());
+    //ESP_ERROR_CHECK(esp_event_loop_create_default());
+    //wifi.connect("TPLink-ciska-alain", "alainloveciska1971");
     
     setCpuFrequencyMhz(240);
 
@@ -947,10 +761,10 @@ void setup() {
 
     list_files();
 
-    xTaskCreate(udp_server_task, "udp_server", 4096, (void*)AF_INET, 5, NULL);
+    //xTaskCreate(udp_server_task, "udp_server", 4096, (void*)AF_INET, 5, NULL);
 
-    //current_file_idx = 0;
-    //xTaskCreate(&run_lua_task,"lua task", 4096*8, &current_file_idx, 0, &lua_task_handle);
+    current_file_idx = 0;
+    xTaskCreate(&run_lua_task,"lua task", 4096*8, &current_file_idx, 0, &lua_task_handle);
     
     // cycle through all scripts
     /*while (true) {

@@ -1,0 +1,10 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "ESP32-PICO-MINI-02")(type "KiCad")(uri "${KIPRJMOD}/library/ESP32-PICO-MINI-02/ESP32-PICO-MINI-02.kicad_sym")(options "")(descr ""))
+  (lib (name "LM25088MH-1")(type "KiCad")(uri "${KIPRJMOD}/library/LM25088MH-1/LM25088MH-1.kicad_sym")(options "")(descr ""))
+  (lib (name "BD95861MUV-E2")(type "Legacy")(uri "${KIPRJMOD}/library/BD95861MUV-E2/2023-02-02_15-38-53.lib")(options "")(descr ""))
+  (lib (name "MEM2075-00-140-01-A")(type "KiCad")(uri "${KIPRJMOD}/library/MEM2075-00-140-01-A/MEM2075-00-140-01-A.kicad_sym")(options "")(descr ""))
+  (lib (name "MCP7940N")(type "Legacy")(uri "${KIPRJMOD}/library/MCP7940N/MCP7940N.lib")(options "")(descr ""))
+  (lib (name "SN74LS244DWR")(type "KiCad")(uri "${KIPRJMOD}/library/SN74LS244DWR/SN74LS244DWR.kicad_sym")(options "")(descr ""))
+  (lib (name "ESP32-S3-WROOM-1-N16R2")(type "KiCad")(uri "${KIPRJMOD}/library/ESP32-S3-WROOM-1-N16R2/ESP32-S3-WROOM-1-N16R2.kicad_sym")(options "")(descr ""))
+)

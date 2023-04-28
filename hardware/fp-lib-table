@@ -1,0 +1,9 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "ESP32-PICO-MINI-02")(type "KiCad")(uri "${KIPRJMOD}/library/ESP32-PICO-MINI-02")(options "")(descr ""))
+  (lib (name "BD95861MUV")(type "KiCad")(uri "${KIPRJMOD}/library/BD95861MUV-E2/footprints.pretty")(options "")(descr ""))
+  (lib (name "MEM2075-00-140-01-A")(type "KiCad")(uri "${KIPRJMOD}/library/MEM2075-00-140-01-A")(options "")(descr ""))
+  (lib (name "SPM6530T-2R2M-HZ")(type "KiCad")(uri "${KIPRJMOD}/library/SPM6530T-2R2M-HZ")(options "")(descr ""))
+  (lib (name "ul_HC2LP-6R0-R")(type "KiCad")(uri "${KIPRJMOD}/library/ul_HC2LP-6R0-R/KiCAD/2023-03-02_12-47-39/footprints.pretty")(options "")(descr ""))
+  (lib (name "ESP32-S3-WROOM-1-N16R2")(type "KiCad")(uri "${KIPRJMOD}/library/ESP32-S3-WROOM-1-N16R2")(options "")(descr ""))
+)

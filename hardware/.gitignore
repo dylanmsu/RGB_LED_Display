@@ -1,0 +1,5 @@
+gerber/*
+*-backups
+*.csv
+*.xml
+*.zip
