@@ -14,11 +14,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "lwip/err.h"
-#include "lwip/sockets.h"
-#include "lwip/sys.h"
-#include <lwip/netdb.h>
-
 #include "freertos/semphr.h"
 
 #include <Update.h>
@@ -30,7 +25,6 @@
 #include "Lua_libs/Lua_matrix_libs.h"
 #include "Lua_libs/Lua_box2d_libs.h"
 #include "FastMath.h"
-#include "Network/WifiConnect.h"
 
 extern "C" {
     #include "lua.h"
@@ -38,24 +32,11 @@ extern "C" {
     #include "lauxlib.h"
 }
 
-#define EXAMPLE_NETIF_DESC_STA "example_netif_sta"
-#define CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY 10
-
-#define ARTNET_DATA         0x50
-#define ARTNET_PORT         6454
-#define ARTNET_HEADER       17
-
-#define ARTNET_POLL         0x2000
-#define ARTNET_POLL_REPLY   0x2100
-#define ARTNET_DMX          0x5000
-#define ARTNET_SYNC         0x5200
-
 static const char *TAG = "espressif"; // TAG for debug
 
 lua_State *lua_state;
 MatrixPanel matrixPanel(32,32);
 Graphics3D graphics3D(&matrixPanel);
-WifiConnect wifi;
 
 Lua_matrix_libs lua_matrix_libs(lua_state, &matrixPanel, &graphics3D);
 Lua_box2d_libs lua_box2d_libs(lua_state, &matrixPanel);
@@ -75,34 +56,6 @@ int buttonCount = 0;
 std::vector<String> files;
 int file_count = 0;
 int current_file_idx = 0;
-
-struct art_poll_reply {
-    uint8_t id[8];
-    uint8_t this_ip[4];
-    uint16_t opcode = ARTNET_POLL_REPLY;
-    uint16_t port_number = 0x1936;
-    uint16_t fw_version = 0;
-    uint8_t net_switch = 0;
-    uint8_t sub_switch = 0;
-    uint16_t oem = 0;
-    uint8_t ubea_version = 0;
-    uint8_t status1 = 0b11100000;
-    uint16_t esta_code = 0;
-    uint8_t short_name[18];
-    uint8_t long_name[64];
-    uint8_t node_report[64];
-    uint16_t num_ports = 0;
-    uint8_t port_types[4];
-    uint8_t good_input[4];
-    uint8_t good_output[4];
-    uint8_t sw_in[4];
-    uint8_t sw_out[4];
-    uint8_t style = 0;
-    uint8_t mac_addr[6];
-    uint8_t bind_ip[4];
-    uint8_t bind_idx = 0;
-    uint8_t status2 = 0b00001110;
-};
 
 float clamp_value(float num, float mini, float maxi){
     return min(max(maxi,num),mini);
@@ -571,152 +524,6 @@ void run_lua_task(void * param) {
     vTaskDelete(NULL);
 }
 
-void parseDMX(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
-    //printf("universe: %i, length: %i, sequence: %i\r\n", universe, length, sequence);
-    for (int j=0; j<7; j++) {
-        if (universe == j) {
-            for (int i=0; i<32*5; i++) {
-                matrixPanel.drawPixel(i%32, 5*j + i/32, data[i*3 + 0], data[i*3 + 1], data[i*3 + 2]);
-            }
-            
-            matrixPanel.drawBuffer();
-        }
-    }
-}
-
-static void udp_server_task(void *pvParameters) {
-    uint8_t rx_buffer[530];
-    char addr_str[128];
-    int addr_family = (int)pvParameters;
-    int ip_protocol = 0;
-    struct sockaddr_in6 dest_addr;
-
-    while (1) {
-
-        struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
-        dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
-        dest_addr_ip4->sin_family = AF_INET;
-        dest_addr_ip4->sin_port = htons(ARTNET_PORT);
-        ip_protocol = IPPROTO_IP;
-
-        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-        if (sock < 0) {
-            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-            break;
-        }
-        ESP_LOGI(TAG, "Socket created");
-
-        int enable = 1;
-        lwip_setsockopt(sock, IPPROTO_IP, IP_PKTINFO, &enable, sizeof(enable));
-
-        // Set timeout
-        struct timeval timeout;
-        timeout.tv_sec = 10;
-        timeout.tv_usec = 0;
-        setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
-
-        int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-        if (err < 0) {
-            ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
-        }
-        ESP_LOGI(TAG, "Socket bound, port %d", ARTNET_PORT);
-
-        struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
-        socklen_t socklen = sizeof(source_addr);
-
-        struct iovec iov;
-        struct msghdr msg;
-        struct cmsghdr *cmsgtmp;
-        u8_t cmsg_buf[CMSG_SPACE(sizeof(struct in_pktinfo))];
-
-        iov.iov_base = rx_buffer;
-        iov.iov_len = sizeof(rx_buffer);
-        msg.msg_control = cmsg_buf;
-        msg.msg_controllen = sizeof(cmsg_buf);
-        msg.msg_flags = 0;
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-        msg.msg_name = (struct sockaddr *)&source_addr;
-        msg.msg_namelen = socklen;
-
-        while (1) {
-            //ESP_LOGI(TAG, "Waiting for data");
-            int len = recvmsg(sock, &msg, 0);
-            // Error occurred during receiving
-            if (len < 0) {
-                ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
-                break;
-            }
-            // Data received
-            else {
-                // Get the sender's ip address as string
-                //inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
-                /*for ( cmsgtmp = CMSG_FIRSTHDR(&msg); cmsgtmp != NULL; cmsgtmp = CMSG_NXTHDR(&msg, cmsgtmp) ) {
-                    if ( cmsgtmp->cmsg_level == IPPROTO_IP && cmsgtmp->cmsg_type == IP_PKTINFO ) {
-                        struct in_pktinfo *pktinfo;
-                        pktinfo = (struct in_pktinfo*)CMSG_DATA(cmsgtmp);
-                        ESP_LOGI(TAG, "dest ip: %s\n", inet_ntoa(pktinfo->ipi_addr));
-                    }
-                }*/
-                uint16_t uniSize;
-
-                if ( rx_buffer[0] == 'A' && rx_buffer[1] == 'r' && rx_buffer[2] == 't' && rx_buffer[3] == '-' && rx_buffer[4] == 'N' && rx_buffer[5] == 'e' && rx_buffer[6] == 't') {
-                    int opcode = rx_buffer[8] | rx_buffer[9] << 8;
-
-                    if (opcode == ARTNET_DMX)
-                    {
-                        int sequence = rx_buffer[12];
-                        int subUni = rx_buffer[14];
-                        int net = rx_buffer[15];
-                        int universe = subUni + net<<8;
-                        int dmxDataLength = rx_buffer[17] + rx_buffer[16] << 8;
-                        parseDMX(subUni, dmxDataLength, sequence, rx_buffer + (ARTNET_HEADER + 1));
-                    }
-
-                    if (opcode == ARTNET_POLL)
-                    {
-                        // https://art-net.org.uk/how-it-works/discovery-packets/artpollreply/
-                        printf("poll\r\n");
-                        //uint8_t poll_reply[214] = {0};
-                        //struct art_poll_reply reply;
-
-                        //memcpy(reply.id, "Art-Net", 8);
-
-                        //uint64_t this_ip_adress = (uint64_t)(struct sockaddr_in *)&dest_addr;
-                        //reply.this_ip[0] = (this_ip_adress & 0xFF000000L) >> 24;
-                        //reply.this_ip[1] = (this_ip_adress & 0x00FF0000L) >> 16;
-                        //reply.this_ip[2] = (this_ip_adress & 0x0000FF00L) >> 8;
-                        //reply.this_ip[3] = (this_ip_adress & 0x000000FFL) >> 0;
-
-                        //int err = sendto(sock, poll_reply, sizeof(poll_reply), 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
-                        //if (err < 0) {
-                        //    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                        //    break;
-                        //}
-                    }
-                    if (opcode == ARTNET_SYNC)
-                    {
-                        printf("sync\r\n");
-                    }
-                }
-
-                /*int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
-                if (err < 0) {
-                    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                    break;
-                }*/
-            }
-        }
-
-        if (sock != -1) {
-            ESP_LOGE(TAG, "Shutting down socket and restarting...");
-            shutdown(sock, 0);
-            close(sock);
-        }
-    }
-    vTaskDelete(NULL);
-}
-
 void setup() {
     i2c_master_init();
 
@@ -729,10 +536,6 @@ void setup() {
     }
 
     init_fat();
-
-    //ESP_ERROR_CHECK(esp_netif_init());
-    //ESP_ERROR_CHECK(esp_event_loop_create_default());
-    //wifi.connect("TPLink-ciska-alain", "alainloveciska1971");
     
     setCpuFrequencyMhz(240);
 
